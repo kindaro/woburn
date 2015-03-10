@@ -1,0 +1,22 @@
+digraph wayland_objects {
+	display -> registry;
+	registry -> {shm data_device_manager compositor sub_compositor seat output shell} [label="global"];
+
+	shm -> shm_pool [label="creates"];
+	shm_pool -> buffer [label="creates"];
+
+	data_device_manager -> {data_source data_device} [label="creates"];
+	data_device -> data_offer [label="returns"];
+
+	compositor -> {surface region} [label="creates"];
+
+	seat -> {pointer keyboard touch} [label="get"];
+	surface -> pointer [label="image"];
+
+	sub_compositor -> {subsurface} [label="creates"];
+
+	buffer -> surface [label="attach"];
+	region -> surface [label="damage"];
+
+	shell -> {shell_surface} [label="creates"];
+}

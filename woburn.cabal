@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                woburn
-version:             0.1.0.0
+version:             0.1.0
 synopsis:            Wayland compositor
 -- description:         
 license:             GPL-3
@@ -17,8 +17,16 @@ cabal-version:       >=1.10
 
 executable woburn
   main-is:             Main.hs
-  -- other-modules:       
+  other-modules:       Data.Rect
+                       Data.Region
+                       Data.STree
+                       Data.STree.Zipper
+                       Woburn.Backend
+                       Woburn.Output
+                       Woburn.Protocol
+                       Woburn.Surface
   -- other-extensions:    
-  build-depends:       base >=4.7 && <4.8
+  build-depends:       base >=4.7 && <4.8, wayland-wire, linear >= 1.9 && < 2.0, containers
   hs-source-dirs:      src
   default-language:    Haskell2010
+  ghc-options:         -Wall

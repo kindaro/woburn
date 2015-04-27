@@ -17,7 +17,8 @@ data Mode =
          }
          deriving (Eq, Show, Ord)
 
-newtype OutputId = OutputId Word32 deriving (Eq, Ord, Num, Real, Integral, Enum)
+newtype OutputId = OutputId Word32
+    deriving (Eq, Ord, Num, Real, Integral, Enum)
 
 data Output o =
     Output { outputId          :: OutputId          -- ^ Unique ID number.
@@ -31,3 +32,6 @@ data Output o =
            , outputScale       :: Int               -- ^ Scaling factor.
            , outputBackendData :: o                 -- ^ Backend specific data.
            }
+
+instance Functor Output where
+    fmap f o = o { outputBackendData = f (outputBackendData o) }

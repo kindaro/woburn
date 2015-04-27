@@ -26,7 +26,11 @@ executable woburn
                        Woburn.Protocol
                        Woburn.Surface
   -- other-extensions:    
-  build-depends:       base >=4.7 && <4.8, wayland-wire, linear >= 1.9 && < 2.0, containers
+  build-depends:       base >=4.7 && <4.8,
+                       wayland-wire,
+                       linear >= 1.9 && < 2.0,
+                       containers,
+                       mtl
   hs-source-dirs:      src
   default-language:    Haskell2010
   ghc-options:         -Wall

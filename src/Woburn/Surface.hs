@@ -6,6 +6,7 @@ module Woburn.Surface
     , Surface (..)
     , SurfaceState (..)
     , SurfaceSet
+    , Role (..)
     , newSurface
     , commit
     , setSync

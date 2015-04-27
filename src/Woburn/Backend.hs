@@ -18,9 +18,9 @@ data BackendFunctions s o =
                        -- | Creates the backend specific data for a new surface.
                        backSurfCreate :: IO s,
                        -- | Composes the 'SurfaceSet' to the specified 'Output'.
-                       backOutCompose :: Output o -> SurfaceSet s -> IO (),
+                       backOutCompose :: OutputId -> SurfaceSet s -> IO (),
                        -- | Selects the mode of an 'Output'.
-                       backOutSetMode :: Output o -> Int -> IO ()
+                       backOutSetMode :: OutputId -> Int -> IO ()
                      }
 
 -- | A set of functions the backend can use to send back notifications to the composer.
@@ -28,7 +28,7 @@ data BackendCallbacks s o =
     BackendCallbacks { -- | Adds a new 'Output', or updates an existing one.
                        backOutAdd     :: Output o -> IO (),
                        -- | Removes an 'Output'
-                       backOutRemove  :: Output o -> IO (),
+                       backOutRemove  :: OutputId -> IO (),
                        -- | Called when a new frame has been dispatched.
-                       backOutFrame   :: Output o -> IO ()
+                       backOutFrame   :: OutputId -> IO ()
                      }

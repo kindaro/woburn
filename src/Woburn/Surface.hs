@@ -1,11 +1,13 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Woburn.Surface
     ( SurfaceMonad (..)
     , SurfaceId
     , Surface (..)
     , SurfaceState (..)
     , SurfaceSet
+    , SurfaceCallbacks (..)
     , Role (..)
     , newSurface
     , commit
@@ -26,7 +28,7 @@ import Data.STree
 import Data.STree.Zipper
 import Data.Word
 import Linear
-import Graphics.Wayland
+import Woburn.Output
 import Woburn.Protocol
 
 class Monad m => SurfaceMonad m s | m -> s where
@@ -42,7 +44,14 @@ data Role =
 
 data Buffered a = Buffered { currentState :: !a, pendingState :: !a }
 
-type SurfaceId = Word32
+data SurfaceCallbacks =
+    SurfaceCallbacks { surfaceFrame :: IO ()
+                     , surfaceEnter :: OutputId -> IO ()
+                     , surfaceLeave :: OutputId -> IO ()
+                     }
+
+newtype SurfaceId = SurfaceId Word32
+    deriving (Eq, Ord, Num, Real, Integral, Enum)
 
 data Shuffle =
     PlaceBelow SurfaceId SurfaceId
@@ -65,13 +74,13 @@ data Surface s =
             , surfNewState      :: Bool                  -- ^ Whether a new state has been committed.
             , surfState         :: Buffered SurfaceState -- ^ Current and pending surface state.
             , surfPosition      :: Buffered (V2 Int)     -- ^ Surface position relative to parent surface.
-            , surfFrameCallback :: [SObject WlCallback]  -- ^ Called when a new frame should be drawn.
             , surfRole          :: Maybe Role            -- ^ The surface role.
             , surfShuffle       :: [Shuffle]             -- ^ Shuffle operations to perform on the next commit.
             , surfCurInput      :: Region Int32          -- ^ Current input region. If this surface is in sync mode
                                                          --   this is copied from the current state when the parent
                                                          --   is committed, otherwise it is updated at the same time
                                                          --   as the current state.
+            , surfCallbacks     :: SurfaceCallbacks      -- ^ Surface callback functions.
             , surfBackendData   :: s                     -- ^ Internal data used by the backend.
             }
 
@@ -110,8 +119,8 @@ flipBuffered f b = Buffered { currentState = pendingState b
                             }
 
 -- | Creates a new surface.
-newSurface :: SurfaceMonad m s => m (Surface s)
-newSurface = do
+newSurface :: SurfaceMonad m s => SurfaceCallbacks -> m (Surface s)
+newSurface cb = do
     s <- surfCreate
     return Surface { surfId            = undefined
                    , surfSync          = False
@@ -119,10 +128,10 @@ newSurface = do
                    , surfNewState      = False
                    , surfState         = Buffered initialState initialState
                    , surfPosition      = Buffered 0 0
-                   , surfFrameCallback = []
                    , surfRole          = Nothing
                    , surfShuffle       = []
                    , surfCurInput      = everything
+                   , surfCallbacks     = cb
                    , surfBackendData   = s
                    }
 

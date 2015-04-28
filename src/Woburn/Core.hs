@@ -4,7 +4,8 @@ module Woburn.Core
 where
 
 import Control.Applicative
-import Control.Monad.State
+import Control.Concurrent
+import Control.Monad.Reader
 import Data.Int
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -13,6 +14,7 @@ import Linear
 import Woburn.Backend
 import Woburn.Output
 import Woburn.Surface
+import Woburn.Window
 
 data ClientCallbacks =
     ClientCallbacks { outputAdd :: Output () -> IO ()
@@ -27,12 +29,10 @@ data WoburnState =
                 , backend  :: BackendFunctions s o
                 }
 
-newtype Woburn a = Woburn (StateT WoburnState IO a)
-    deriving (Functor, Applicative, Monad, MonadState WoburnState)
+newtype Woburn a = Woburn (ReaderT (MVar WoburnState) IO a)
+    deriving (Functor, Applicative, Monad, MonadReader (MVar WoburnState), MonadIO)
 
 newtype ClientId = ClientId Word32
-    deriving (Eq, Ord, Num, Real, Integral, Enum)
-newtype WindowId = WindowId Word32
     deriving (Eq, Ord, Num, Real, Integral, Enum)
 
 clientCreate :: ClientCallbacks -> Woburn ClientId
@@ -47,10 +47,6 @@ clientCreateSurface = undefined
 clientCreateWindow :: ClientId -> WindowCallbacks -> Woburn WindowId
 clientCreateWindow = undefined
 
-data WindowCallbacks =
-    WindowCallbacks { windowConfigure :: Word32 -> V2 Int32 -> IO ()
-                    }
-
 windowSetTitle :: WindowId -> String -> Woburn ()
 windowSetTitle = undefined
 
@@ -59,12 +55,6 @@ windowSetClass = undefined
 
 windowDestroy :: WindowId -> Woburn ()
 windowDestroy = undefined
-
-data SurfaceCallbacks =
-    SurfaceCallbacks { surfaceFrame :: IO ()
-                     , surfaceEnter :: OutputId -> IO ()
-                     , surfaceLeave :: OutputId -> IO ()
-                     }
 
 surfaceSetRole :: SurfaceId -> Role -> Woburn ()
 surfaceSetRole = undefined

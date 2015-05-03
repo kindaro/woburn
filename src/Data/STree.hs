@@ -1,6 +1,7 @@
 module Data.STree
     ( STree (..)
     , label
+    , singleton
     )
 where
 
@@ -13,3 +14,7 @@ instance Functor STree where
 -- | Return the label value.
 label :: STree a -> a
 label (STree _ x _) = x
+
+-- | Creates a tree with a single element.
+singleton :: a -> STree a
+singleton a = STree [] a []

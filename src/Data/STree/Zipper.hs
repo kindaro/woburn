@@ -33,7 +33,7 @@ import Control.Arrow ((&&&))
 import Data.List (unfoldr)
 import Data.Maybe (listToMaybe)
 import Data.Sequence (singleton, viewl, ViewL (..), (><), fromList)
-import Data.STree
+import Data.STree hiding (singleton)
 
 data Branch a =
     TurnLeft  [STree a] [STree a] a [STree a]

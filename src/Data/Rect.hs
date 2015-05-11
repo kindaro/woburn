@@ -12,6 +12,7 @@ import Linear
 -- The first argument is the position of the upper-left corner, the second the
 -- lower-right corner.
 data Rect a = Rect (V2 a) (V2 a)
+    deriving (Eq, Show)
 
 instance Functor Rect where
     fmap f (Rect start stop) = Rect (fmap f start) (fmap f stop)

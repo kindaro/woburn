@@ -16,8 +16,10 @@ import Linear
 data RegionData a =
     Add (R.Rect a)
   | Sub (R.Rect a)
+  deriving (Eq, Show)
 
 newtype Region a = Region { getData :: [RegionData a] }
+    deriving (Eq, Show)
 
 -- | Checks if a point is inside a region.
 inside :: Ord a => V2 a -> Region a -> Bool

@@ -1,6 +1,7 @@
 {-# LANGUAGE TupleSections #-}
 module Data.STree.Zipper
     ( Zipper
+    , ZipperPosition (..)
     -- * Movement
     , goUp
     , goDown
@@ -10,6 +11,7 @@ module Data.STree.Zipper
     , parents
     -- * Zipper information
     , depth
+    , position
     -- * Insertion / deletion
     , delete
     , insert
@@ -38,10 +40,16 @@ import Data.STree hiding (singleton)
 data Branch a =
     TurnLeft  [STree a] [STree a] a [STree a]
   | TurnRight [STree a] [STree a] a [STree a]
-  deriving (Eq)
+  deriving (Show, Eq)
+
+data ZipperPosition =
+    Root
+  | OnLeft
+  | OnRight
+  deriving (Show, Eq)
 
 data Zipper a = Zipper (STree a) [Branch a]
-    deriving (Eq)
+    deriving (Show, Eq)
 
 infixr 5 <++>
 
@@ -87,6 +95,14 @@ goRight (Zipper n (b:bs)) =
 depth :: Zipper a -> Int
 depth = length . parents
 
+-- | Returns the zipper position relative to its parent.
+position :: Zipper a -> ZipperPosition
+position (Zipper _ bs) =
+    case bs of
+         []             -> Root
+         TurnRight {}:_ -> OnRight
+         TurnLeft  {}:_ -> OnLeft
+
 -- | Returns the currently focused tree.
 getTree :: Zipper a -> STree a
 getTree (Zipper n _) = n
@@ -111,7 +127,10 @@ fromTree n = Zipper n []
 
 -- | Returns a list of all immediate children of this zipper.
 children :: Zipper a -> [Zipper a]
-children = maybe [] (unfoldr (fmap (id &&& id) . goRight)) . goDown
+children z =
+    case goDown z of
+         Nothing -> []
+         Just l  -> l : unfoldr (fmap (id &&& id) . goRight) l
 
 -- | Returns a list of zippers for all parents of this zipper.
 parents :: Zipper a -> [Zipper a]

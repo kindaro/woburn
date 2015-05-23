@@ -2,11 +2,12 @@ module Data.STree
     ( STree (..)
     , label
     , singleton
+    , drawTree
     )
 where
 
 import Control.Applicative
-import Data.Foldable
+import Data.Foldable hiding (concatMap)
 import Data.Monoid
 import Data.Traversable
 
@@ -33,3 +34,12 @@ label (STree _ x _) = x
 -- | Creates a tree with a single element.
 singleton :: a -> STree a
 singleton a = STree [] a []
+
+-- | Draws a nice 2-dimensional drawing of a tree.
+drawTree :: STree String -> String
+drawTree = f 0 '*'
+    where
+        f indent c (STree l n r) =
+            concatMap (f (indent + 1) '/') l
+            ++ replicate indent '*' ++ [c] ++ n ++ "\n"
+            ++ concatMap (f (indent + 1) '\\') r

@@ -1,10 +1,12 @@
 import Control.Applicative
 import Control.Monad
 import System.Exit
+import Test.SurfaceSet
 import Test.Zipper
     
 tests :: [IO Bool]
-tests = [ zipperTests
+tests = [ surfaceSetTests
+        , zipperTests
         ]
 
 main :: IO ()

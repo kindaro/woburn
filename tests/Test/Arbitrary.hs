@@ -28,7 +28,11 @@ instance (Eq a, Arbitrary a) => Arbitrary (STree a) where
                     <*> arbitrary
                     <*> vectorOf r (f n')
 
-    shrink (STree l n r) = [STree [] n []] ++ l ++ r
+    shrink (STree [] _ []) = []
+    shrink (STree l  n r ) = [STree [] n []] ++ l ++ r
 
 instance Arbitrary a => Arbitrary (Surface a) where
-    arbitrary = create undefined <$> arbitrary <*> arbitrary
+    arbitrary = do
+        surf <- create undefined <$> arbitrary <*> arbitrary
+        sync <- arbitrary
+        return surf { surfSync = sync }

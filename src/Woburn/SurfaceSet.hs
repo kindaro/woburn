@@ -2,8 +2,7 @@ module Woburn.SurfaceSet
     ( SurfaceSet
     , SurfacePointer
     , findSid
-    , inheritsSync
-    , addShuffle
+    , findCommonRoot
     , delete
     , shuffle
     )
@@ -16,22 +15,21 @@ import qualified Data.Map as M
 import Data.STree
 import Data.STree.Zipper hiding (delete)
 import qualified Data.STree.Zipper as Z
-import Data.Traversable (traverse)
 import Woburn.Surface
 
 type SurfaceSet s = STree (Surface s)
 type SurfacePointer s = Zipper (Surface s)
 
 -- | Searches for a specific surface in a surface set and returns a zipper to it.
-findSid :: SurfaceId -> SurfaceSet s -> Maybe (SurfacePointer s)
-findSid sid = findFirst ((== sid) . surfId . label)
+findSid :: SurfaceId -> STree SurfaceId -> Maybe (Zipper SurfaceId)
+findSid sid = findFirst ((== sid) . label)
 
 -- | Tries to find the common root of two surfaces that should be either
 -- siblings or parent-child.
 --
 -- If they are siblings, the common root is their parent. If they are
 -- parent-child, the parent is the common root.
-findCommonRoot :: SurfaceId -> SurfaceId -> SurfaceSet s -> Maybe (SurfacePointer s)
+findCommonRoot :: SurfaceId -> SurfaceId -> STree SurfaceId -> Maybe SurfaceId
 findCommonRoot a b set = do
     guard (a /= b)
 
@@ -48,36 +46,22 @@ findCommonRoot a b set = do
 
     root <- goRoot
     check root
-    return root
+    return . label $ getTree root
 
--- | Adds a shuffle to the surface set.
---
--- It is assumed that the shuffle is valid, and that it should be inserted in
--- the root node.
-addShuffle' :: Shuffle -> SurfaceSet s -> SurfaceSet s
-addShuffle' sh (STree l n r) = STree l (n { surfShuffle = sh : surfShuffle n }) r
-
--- | Adds a shuffle to the surface set, or returns 'Nothing' if the shuffle is invalid.
-addShuffle :: Shuffle -> SurfaceSet s -> Maybe (SurfaceSet s)
-addShuffle sh@(Shuffle _ a b) = fmap (toTree . modify (addShuffle' sh)) . findCommonRoot a b
-
--- | Checks if the current node inherits the sync flag for any of its parents.
-inheritsSync :: SurfacePointer s -> Bool
-inheritsSync = any (surfSync . label . getTree) . parents
-
--- | Deletes a surface from the set, returning the set without the surface and
--- the subtree with the removed surface as the root.
+-- | Deletes a surface from the set, returning the set without the surface, the
+-- subtree with the removed surface as the root and a delete shuffle.
 --
 -- If the surface isn't in the set, or it is the root of the entire set,
 -- 'Nothing' is returned.
-delete :: SurfaceId -> SurfaceSet s -> Maybe (SurfaceSet s, SurfaceSet s)
+delete :: SurfaceId -> STree SurfaceId -> Maybe (STree SurfaceId, STree SurfaceId, Shuffle)
 delete sid set = do
-    ptr <- findSid sid set
-    sh  <- createDeletedShuffle ptr
-    first (toTree . modify (addShuffle' sh)) <$> Z.delete ptr
+    ptr         <- findSid sid set
+    sh          <- createDeletedShuffle ptr
+    (ptr', del) <- Z.delete ptr
+    return (toTree ptr', del, sh)
 
 -- | Creates a 'DeletedAbove' or 'DeletedBelow' shuffle for the current tree.
-createDeletedShuffle :: SurfacePointer s -> Maybe Shuffle
+createDeletedShuffle :: Zipper SurfaceId -> Maybe Shuffle
 createDeletedShuffle ptr =
     (goLeft  ptr >>= createSiblingShuffle DeletedBelow)
     <|>
@@ -85,7 +69,7 @@ createDeletedShuffle ptr =
     <|>
     (goUp    ptr >>= createParentShuffle)
     where
-        createShuffle s x = Shuffle s (surfId . label $ getTree ptr) (surfId . label $ getTree x)
+        createShuffle s x = Shuffle s (label $ getTree ptr) (label $ getTree x)
 
         createSiblingShuffle s x = createShuffle s x <$ guard (position ptr == position x)
 
@@ -134,17 +118,17 @@ unprune = flip $ foldl f
                  (DeletedBelow, True) -> a : d : as
                  _                    -> a : f as sh
 
--- | Converts a 'SurfaceSet' to a list of 'SurfaceId's as well as a map from
--- 'SurfaceId' back to the subtree.
-toList :: SurfaceSet s -> (M.Map SurfaceId (SurfaceSet s), Surface s, [SurfaceId])
-toList set@(STree l n r) = (m, n, map (surfId . label) (l ++ [set] ++ r))
+-- | Converts a 'STree SurfaceId' to a list of 'SurfaceId's as well as a map
+-- from 'SurfaceId' back to the subtree.
+toList :: STree SurfaceId -> (M.Map SurfaceId (STree SurfaceId), SurfaceId, [SurfaceId])
+toList set@(STree l n r) = (m, n, map label (l ++ [set] ++ r))
     where
-        m = M.fromList (map (surfId . label &&& id) (l ++ r))
+        m = M.fromList (map (label &&& id) (l ++ r))
 
--- | Converts a list of 'SurfaceId's back to a 'SurfaceSet'
-fromList :: M.Map SurfaceId (SurfaceSet s) -> Surface s -> [SurfaceId] -> Maybe (SurfaceSet s)
+-- | Converts a list of 'SurfaceId's back to a 'STree SurfaceId'
+fromList :: M.Map SurfaceId (STree SurfaceId) -> SurfaceId -> [SurfaceId] -> Maybe (STree SurfaceId)
 fromList m n ids =
-    case span (/= surfId n) ids of
+    case span (/= n) ids of
          (_   , []        ) -> Nothing
          (lids, _   : rids) ->
              STree
@@ -152,10 +136,9 @@ fromList m n ids =
              <*> pure n
              <*> traverse (`M.lookup` m) rids
 
--- | Applies the shuffle in in root surface to the 'SurfaceSet'.
-shuffle :: SurfaceSet s -> Maybe (SurfaceSet s)
-shuffle set =
-    fromList m (n { surfShuffle = [] }) . prune sh . shuffleList sh $ unprune sh ids
+-- | Applies the shuffles to the 'STree SurfaceId'.
+shuffle :: [Shuffle] -> STree SurfaceId -> Maybe (STree SurfaceId)
+shuffle sh set =
+    fromList m n . prune sh . shuffleList sh $ unprune sh ids
     where
         (m, n, ids) = toList set
-        sh          = surfShuffle n

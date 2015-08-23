@@ -33,6 +33,6 @@ instance (Eq a, Arbitrary a) => Arbitrary (STree a) where
 
 instance Arbitrary a => Arbitrary (Surface a) where
     arbitrary = do
-        surf <- create undefined <$> arbitrary <*> arbitrary
+        surf <- create <$> arbitrary
         sync <- arbitrary
         return surf { surfSync = sync }

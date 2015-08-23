@@ -1,7 +1,15 @@
-module Woburn.SurfaceSet
-    ( SurfaceSet
-    , SurfacePointer
-    , findSid
+{-|
+Module      : Woburn.Surface.Tree
+Description : Functions to work on trees of 'SurfaceId's
+Copyright   : (C) Sivert Berg, 2015
+License     : GPL3
+Maintainer  : code@trev.is
+Stability   : Experimental
+
+Contains various functions to work on 'STree's of 'SurfaceId's.
+|-}
+module Woburn.Surface.Tree
+    ( findSid
     , findCommonRoot
     , delete
     , shuffle
@@ -16,9 +24,6 @@ import Data.STree
 import Data.STree.Zipper hiding (delete)
 import qualified Data.STree.Zipper as Z
 import Woburn.Surface
-
-type SurfaceSet s = STree (Surface s)
-type SurfacePointer s = Zipper (Surface s)
 
 -- | Searches for a specific surface in a surface set and returns a zipper to it.
 findSid :: SurfaceId -> STree SurfaceId -> Maybe (Zipper SurfaceId)
@@ -75,8 +80,8 @@ createDeletedShuffle ptr =
 
         createParentShuffle x =
             case position ptr of
-                 OnLeft  -> pure $ createShuffle DeletedAbove x 
-                 OnRight -> pure $ createShuffle DeletedBelow x 
+                 OnLeft  -> pure $ createShuffle DeletedAbove x
+                 OnRight -> pure $ createShuffle DeletedBelow x
                  Root    -> Nothing
 
 -- | Shuffles a list.
@@ -84,13 +89,13 @@ shuffleList :: [Shuffle] -> [SurfaceId] -> [SurfaceId]
 shuffleList = flip (foldl f) . reverse
     where
         f []     _                  = []
-        f (a:as) sh@(Shuffle s d x) = 
+        f (a:as) sh@(Shuffle s d x) =
             case (s, a == x, a == d) of
                  (DeletedAbove, _   , _   ) -> a : as
                  (DeletedBelow, _   , _   ) -> a : as
                  (PlaceAbove  , True, _   ) -> d : a : filter (/= d) as
                  (PlaceBelow  , True, _   ) -> a : d : filter (/= d) as
-                 (_           , _   , True) -> f as sh 
+                 (_           , _   , True) -> f as sh
                  _                          -> a : f as sh
 
 -- | Removes any deleted items from the list of surface IDs.
@@ -98,7 +103,7 @@ prune :: [Shuffle] -> [SurfaceId] -> [SurfaceId]
 prune = flip $ foldl f
     where
         f []     _                  = []
-        f (a:as) sh@(Shuffle s d _) = 
+        f (a:as) sh@(Shuffle s d _) =
             case (s, a == d) of
                  (PlaceAbove  , _   ) -> a : as
                  (PlaceBelow  , _   ) -> a : as
@@ -107,7 +112,7 @@ prune = flip $ foldl f
 
 -- | Adds all the deleted ids back to a list of surface IDs.
 unprune :: [Shuffle] -> [SurfaceId] -> [SurfaceId]
-unprune = flip $ foldl f 
+unprune = flip $ foldl f
     where
         f []     _                  = []
         f (a:as) sh@(Shuffle s d x) =

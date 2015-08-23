@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
-module Test.SurfaceSet
-    ( surfaceSetTests
+module Test.SurfaceTree
+    ( surfaceTreeTests
     )
 where
 
@@ -13,7 +13,7 @@ import Data.Maybe
 import Data.STree
 import Data.STree.Zipper hiding (delete)
 import Woburn.Surface
-import Woburn.SurfaceSet
+import Woburn.Surface.Tree
 import Test.Arbitrary ()
 import Test.QuickCheck hiding (label)
 
@@ -152,5 +152,5 @@ prop_shuffle set =
                  _                          -> return (sh : ss, set)
 
 return []
-surfaceSetTests :: IO Bool
-surfaceSetTests = $quickCheckAll
+surfaceTreeTests :: IO Bool
+surfaceTreeTests = $quickCheckAll

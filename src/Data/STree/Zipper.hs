@@ -3,10 +3,10 @@ module Data.STree.Zipper
     ( Zipper
     , ZipperPosition (..)
     -- * Movement
-    , goUp
-    , goDown
-    , goLeft
-    , goRight
+    , up
+    , down
+    , left
+    , right
     , children
     , parents
     -- * Zipper information
@@ -58,23 +58,23 @@ infixr 5 <++>
 a <++> b = reverse a ++ b
 
 -- | Moves to the parent node if one exists, otherwise it returns 'Nothing'.
-goUp :: Zipper a -> Maybe (Zipper a)
-goUp (Zipper _ []                                   ) = Nothing
-goUp (Zipper n (TurnLeft  before after x right : bs)) = Just $ Zipper (STree (before <++> n : after) x right) bs
-goUp (Zipper n (TurnRight before after x left  : bs)) = Just $ Zipper (STree left x  (before <++> n : after)) bs
+up :: Zipper a -> Maybe (Zipper a)
+up (Zipper _ []                                   ) = Nothing
+up (Zipper n (TurnLeft  before after x right : bs)) = Just $ Zipper (STree (before <++> n : after) x right) bs
+up (Zipper n (TurnRight before after x left  : bs)) = Just $ Zipper (STree left x  (before <++> n : after)) bs
 
 -- | Returns a zipper for the left-most child.
-goDown :: Zipper a -> Maybe (Zipper a)
-goDown (Zipper (STree l x r) bs) =
+down :: Zipper a -> Maybe (Zipper a)
+down (Zipper (STree l x r) bs) =
     case (l, r) of
          ([]  , []  ) -> Nothing
          (c:cs, _   ) -> Just . Zipper c $ TurnLeft  [] cs x r : bs
          ([]  , c:cs) -> Just . Zipper c $ TurnRight [] cs x l : bs
 
 -- | Go to the left sibling if one exists.
-goLeft :: Zipper a -> Maybe (Zipper a)
-goLeft (Zipper _ []    ) = Nothing
-goLeft (Zipper n (b:bs)) =
+left :: Zipper a -> Maybe (Zipper a)
+left (Zipper _ []    ) = Nothing
+left (Zipper n (b:bs)) =
     case b of
          TurnRight []     sr x (l:ls) -> Just $ Zipper l (TurnLeft  (reverse ls) []     x (n:sr) : bs)
          TurnRight (l:sl) sr x ls     -> Just $ Zipper l (TurnRight sl           (n:sr) x ls     : bs)
@@ -82,9 +82,9 @@ goLeft (Zipper n (b:bs)) =
          _                            -> Nothing
 
 -- | Go to the right sibling if one exists.
-goRight :: Zipper a -> Maybe (Zipper a)
-goRight (Zipper _ []    ) = Nothing
-goRight (Zipper n (b:bs)) =
+right :: Zipper a -> Maybe (Zipper a)
+right (Zipper _ []    ) = Nothing
+right (Zipper n (b:bs)) =
     case b of
          TurnLeft  sl []     x (r:rs) -> Just $ Zipper r (TurnRight []     rs x (reverse (n:sl)): bs)
          TurnLeft  sl (r:sr) x rs     -> Just $ Zipper r (TurnLeft  (n:sl) sr x rs              : bs)
@@ -119,7 +119,7 @@ modifyA f z = flip setTree z <$> f (getTree z)
 
 -- | Converts the zipper back to a tree.
 toTree :: Zipper a -> STree a
-toTree z = maybe (getTree z) toTree $ goUp z
+toTree z = maybe (getTree z) toTree $ up z
 
 -- | Returns a zipper with the focus on the root-node.
 fromTree :: STree a -> Zipper a
@@ -128,13 +128,13 @@ fromTree n = Zipper n []
 -- | Returns a list of all immediate children of this zipper.
 children :: Zipper a -> [Zipper a]
 children z =
-    case goDown z of
+    case down z of
          Nothing -> []
-         Just l  -> l : unfoldr (fmap (id &&& id) . goRight) l
+         Just l  -> l : unfoldr (fmap (id &&& id) . right) l
 
 -- | Returns a list of zippers for all parents of this zipper.
 parents :: Zipper a -> [Zipper a]
-parents = unfoldr (fmap (id &&& id) . goUp)
+parents = unfoldr (fmap (id &&& id) . up)
 
 -- | Returns a list of all zippers for the tree, sorted by top- left- most
 -- first.

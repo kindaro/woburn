@@ -32,12 +32,12 @@ prop_findSid set sid =
 prop_deleteAny :: STree SurfaceId -> SurfaceId -> Property
 prop_deleteAny set sid =
     case delete sid set of
-         Nothing              ->
+         Nothing ->
              sid === label set
              .||. sid `notElem` toList set
          Just (set', subtree, sh) ->
              let p = do
-                     parent@(STree l _ r) <- getTree <$> (findSid sid set >>= goUp)
+                     parent@(STree l _ r) <- getTree <$> (findSid sid set >>= up)
                      let pid = label parent
                      (map label (l ++ [parent] ++ r), ) <$> findSid pid set'
              in

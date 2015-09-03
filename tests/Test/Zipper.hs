@@ -11,19 +11,19 @@ import Data.STree.Zipper
 import Test.Arbitrary ()
 import Test.QuickCheck hiding (label)
 
-prop_goDown :: STree Word32 -> Property
-prop_goDown t =
-    case (t, goDown $ fromTree t) of
+prop_down :: STree Word32 -> Property
+prop_down t =
+    case (t, down $ fromTree t) of
          (STree []    _ []   , z     ) -> z === Nothing
          (STree []    _ (r:_), Just z) -> r === getTree z
          (STree (l:_) _ _    , Just z) -> l === getTree z
          (_                  , z     ) -> counterexample (show t ++ ", " ++ show z) False
 
-prop_goLeftRight :: STree Word32 -> Property
-prop_goLeftRight t@(STree l _ r) =
+prop_left_right :: STree Word32 -> Property
+prop_left_right t@(STree l _ r) =
     length (l ++ r) >= 2 ==>
-        let z = goDown (fromTree t) in
-        (z >>= goRight >>= goLeft) === z .&&. counterexample ("isJust " ++ show z) (isJust z)
+        let z = down (fromTree t) in
+        (z >>= right >>= left) === z .&&. counterexample ("isJust " ++ show z) (isJust z)
 
 prop_children :: STree Word32 -> Property
 prop_children t@(STree l _ r) = l ++ r === map getTree (children $ fromTree t)

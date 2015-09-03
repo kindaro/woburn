@@ -43,15 +43,15 @@ findCommonRoot a b set = do
 
     let da = depth za
         db = depth zb
-        (goRoot, check) =
+        (root, check) =
             case compare da db of
-                 LT -> (goUp zb, guard . (za ==))
-                 GT -> (goUp za, guard . (zb ==))
-                 EQ -> (goUp zb, \p -> goUp za >>= guard . (p ==))
+                 LT -> (up zb, guard . (za ==))
+                 GT -> (up za, guard . (zb ==))
+                 EQ -> (up zb, \p -> up za >>= guard . (p ==))
 
-    root <- goRoot
-    check root
-    return . label $ getTree root
+    rt <- root
+    check rt
+    return . label $ getTree rt
 
 -- | Deletes a surface from the set, returning the set without the surface, the
 -- subtree with the removed surface as the root and a delete shuffle.
@@ -68,11 +68,11 @@ delete sid set = do
 -- | Creates a 'DeletedAbove' or 'DeletedBelow' shuffle for the current tree.
 createDeletedShuffle :: Zipper SurfaceId -> Maybe Shuffle
 createDeletedShuffle ptr =
-    (goLeft  ptr >>= createSiblingShuffle DeletedBelow)
+    (Z.left  ptr >>= createSiblingShuffle DeletedBelow)
     <|>
-    (goRight ptr >>= createSiblingShuffle DeletedAbove)
+    (Z.right ptr >>= createSiblingShuffle DeletedAbove)
     <|>
-    (goUp    ptr >>= createParentShuffle)
+    (Z.up    ptr >>= createParentShuffle)
     where
         createShuffle s x = Shuffle s (label $ getTree ptr) (label $ getTree x)
 

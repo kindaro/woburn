@@ -131,7 +131,7 @@ mapOutput off out = MappedOutput out . shiftX off $ outRect out
     where
         outRect = Rect 0 . fmap (subtract 1) . outputSize
 
--- | Gives a list of 'Output's a position in the global compositor space.
+-- | Gives a list of 'Output's positions in the global compositor space.
 --
 -- The first 'Output' in the list will be the right-most 'Output'.
 mapOutputs :: Word32 -> [Output] -> [MappedOutput]

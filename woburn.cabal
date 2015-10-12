@@ -26,11 +26,19 @@ executable woburn
                        Woburn.Protocol
                        Woburn.Surface
   -- other-extensions:    
-  build-depends:       base >=4.7 && <4.8,
+  build-depends:       base >=4.8 && <4.9,
                        wayland-wire,
                        linear >= 1.9 && < 2.0,
                        containers,
-                       mtl
+                       mtl,
+                       diet-set,
+                       process,
+                       transformers,
+                       async,
+                       pipes,
+                       pipes-concurrency,
+                       template-haskell,
+                       lens
   hs-source-dirs:      src
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -41,10 +49,17 @@ test-suite test
   main-is:             Test.hs
   hs-source-dirs:      tests src
   ghc-options:         -Wall
-  build-depends:       base >=4.7 && <4.8,
+  build-depends:       base >=4.8 && <4.9,
                        wayland-wire,
                        linear >= 1.9 && < 2.0,
                        containers,
                        mtl,
                        diet-set,
+                       process,
+                       transformers,
+                       async,
+                       pipes,
+                       pipes-concurrency,
+                       template-haskell,
+                       lens,
                        QuickCheck

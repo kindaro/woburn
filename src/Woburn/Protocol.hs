@@ -7,5 +7,7 @@ module Woburn.Protocol
 where
 
 import Graphics.Wayland
+import Language.Haskell.TH (runIO)
+import Woburn.Path
 
-$(generateFromXml Server "/usr/share/wayland/wayland.xml")
+$(runIO waylandXmlPath >>= generateFromXml Server)

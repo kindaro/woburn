@@ -15,7 +15,7 @@ import Data.STree.Zipper hiding (delete)
 import Woburn.Surface
 import Woburn.Surface.Tree
 import Test.Arbitrary ()
-import Test.QuickCheck hiding (label)
+import Test.QuickCheck hiding (label, shuffle)
 
 getChildren :: STree SurfaceId -> [STree SurfaceId]
 getChildren (STree l _ r) = l ++ r

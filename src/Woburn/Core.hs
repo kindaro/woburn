@@ -158,11 +158,11 @@ deleteOutput oid os =
          []     -> (Nothing, as)
          (x:xs) -> (Just x, mapOutputs (outputsRight xs) (map mappedOutput as) ++ xs)
 
--- | Updates the layout.
---
--- Should be called whenever the 'universe' has changed.
-doLayout :: Core s ()
-doLayout = modify $ \s -> s { layedOut = layout (universe s) }
+-- | Sets the universe, and recomputes the layout.
+setUniverse :: Core s (U.Universe WindowId) -> Core s ()
+setUniverse f = do
+    u <- f
+    modify $ \s -> s { universe = u, layedOut = layout u }
 
 -- | Handles backend events.
 handleBackendEvent :: B.Event -> Core s ()
@@ -180,8 +180,8 @@ handleBackendEvent evt = do
              case mOut of
                   Nothing  -> error "Backend removed a non-existing output"
                   Just out -> sendClientEvent Nothing (OutputRemoved out)
-    modify $ \s -> s { universe = U.setOutputs (outputs s) (universe s) }
-    doLayout
+    setUniverse $ U.setOutputs <$> gets outputs <*> gets universe
+    -- TODO: Send Commit request
 
 handleCoreRequest :: ClientId -> Request -> Core s ()
 handleCoreRequest cid req =

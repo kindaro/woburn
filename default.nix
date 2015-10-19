@@ -1,6 +1,6 @@
 { mkDerivation, base, containers, diet-set, linear, mtl, QuickCheck, pipes, pipes-concurrency, async
-, stdenv, wayland-wire, vim, cabal-install, wayland, pkgconfig, hlint
-, git, less
+, stdenv, wayland-wire, vimEnv, cabal-install, wayland, pkgconfig, hlint
+, git, less, ghc-mod
 }:
 mkDerivation {
   pname = "woburn";
@@ -8,7 +8,7 @@ mkDerivation {
   src = ./.;
   isLibrary = false;
   isExecutable = true;
-  buildTools = [ vim cabal-install pkgconfig hlint git less ];
+  buildTools = [ vimEnv cabal-install pkgconfig hlint git less ghc-mod ];
   buildDepends = [
     base containers diet-set linear mtl wayland-wire wayland pipes pipes-concurrency async
   ];

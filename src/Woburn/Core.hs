@@ -14,11 +14,11 @@ where
 import Control.Arrow
 import Control.Concurrent
 import Control.Concurrent.Async
+import Control.Concurrent.MChan.Split
 import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Lens hiding (universe)
-import Data.Foldable (find)
 import Data.Maybe
 import Data.Int
 import Data.Rect
@@ -30,9 +30,6 @@ import qualified Data.Set.Diet as D
 import Data.Word
 import Linear
 
-import Pipes
-import qualified Pipes.Concurrent as PC
-import qualified Pipes.Prelude as P
 import Prelude
 
 import qualified Woburn.Backend as B
@@ -53,14 +50,14 @@ data CoreState s =
               }
 
 data CoreData s =
-    CoreData { backendRequest :: PC.Output (B.Request s)
+    CoreData { backendRequest :: WMChan (B.Request s)
              , backendSurfGet :: IO s
              }
 
 data ClientData s =
     ClientData { surfaces :: M.Map SurfaceId (Surface s, Either SurfaceId (STree SurfaceId))
                , windows  :: M.Map WindowId ()
-               , output   :: PC.Output Event
+               , output   :: WMChan Event
                }
 
 type Core s a = ReaderT (CoreData s) (StateT (CoreState s) IO) a
@@ -99,7 +96,7 @@ data Error =
   deriving (Eq, Show)
 
 data Message =
-    ClientAdd ClientId (PC.Output Event)
+    ClientAdd ClientId (WMChan Event)
   | ClientDel ClientId
   | ClientRequest ClientId Request
   | BackendEvent B.Event
@@ -205,21 +202,8 @@ handleMsg msg =
          BackendEvent evt      -> handleBackendEvent evt
          ClientRequest cid req -> handleCoreRequest cid req
 
--- | Runs an effect, and links it to the current thread.
--- The 'link' ensures any exceptions thrown while running the effect, is
--- re-thrown in the current thread.
-runAndLink :: Effect IO () -> IO ()
-runAndLink effect = async (runEffect effect) >>= link
-
--- TODO: Ignore sends to exhausted outputs?
-sendToOutput :: MonadIO m => a -> PC.Output a -> m ()
-sendToOutput val out = liftIO (PC.atomically (PC.send out val)) >>= checkRet
-    where
-        checkRet True  = return ()
-        checkRet False = error "Trying to send to an exhausted output"
-
 sendBackendRequest :: B.Request s -> Core s ()
-sendBackendRequest req = asks backendRequest >>= sendToOutput req
+sendBackendRequest req = asks backendRequest >>= liftIO . (`writeMChan` req)
 
 -- | Sends an event to one or all clients.
 --
@@ -230,78 +214,53 @@ sendBackendRequest req = asks backendRequest >>= sendToOutput req
 sendClientEvent :: Maybe ClientId -> Event -> Core s ()
 sendClientEvent Nothing evt =
     gets clients >>=
-        mapM_ (sendToOutput evt . output) . M.elems
+        mapM_ (liftIO . (`writeMChan` evt) . output) . M.elems
 sendClientEvent (Just cid) evt =
     gets clients >>=
         maybe
             (error "Trying to send an event to an unknown client")
-            (sendToOutput evt . output) . M.lookup cid
-
--- | Creates an IO action that will cause a backend-specific surface to be
--- pulled from the backend, and returned.
-createSurfGetter :: Producer s IO () -> IO (IO s)
-createSurfGetter pSurf = do
-    sem <- newQSem 0
-    var <- newEmptyMVar
-    a   <- async . runEffect $ pSurf >-> putS sem var
-    link a
-    return $ getS sem var
-    where
-        putS sem var = do
-            liftIO $ waitQSem sem
-            s <- await
-            liftIO $ putMVar var s
-        getS sem var = do
-            signalQSem sem
-            readMVar var
+            (liftIO . (`writeMChan` evt) . output) . M.lookup cid
 
 -- | Returns a producer of messages.
 --
 -- Passes on backend events, and creates threads to handle new clients.
-msgGenerator :: MonadIO m
-             => Producer (Consumer Event IO (), Producer Request IO ()) IO () -- ^ New clients.
-             -> Producer B.Event IO ()      -- ^ Incoming backend events.
-             -> IO (Producer Message m ())
-msgGenerator clients bEvt = do
-    (msgOut, msgIn) <- PC.spawn PC.unbounded
-    dVar            <- newMVar D.empty
+msgGenerator :: RMChan (WMChan Event, RMChan Request) -- ^ New client.
+             -> RMChan B.Event                        -- ^ Incoming backend events.
+             -> IO (RMChan Message)                   -- ^ Combined backend and client data.
+msgGenerator newClients bEvt = do
+    (msgRChan, msgWChan) <- newMChan
+    dVar                 <- newMVar D.empty
 
-    runAndLink . for clients $ lift . \(evt, req) -> do
-        -- Pass events from the event buffer to the client
-        (evtOut, evtIn) <- PC.spawn PC.unbounded
-        runAndLink $ PC.fromInput evtIn >-> evt
+    -- Pass on events from the backend.
+    linkAsync . readUntilClosed bEvt $ writeMChan msgWChan . BackendEvent
 
-        -- Create client ID, and tell the core about it
+    -- Wait for new clients.
+    linkAsync . readUntilClosed newClients $ \(cEvt, cReq) -> do
+        -- Create client ID, and notify the core
         cid <- modifyMVar dVar (return . swap . fromMaybe (error "Ran out of client IDs!") . D.minView)
-        _   <- PC.atomically . PC.send msgOut $ ClientAdd cid evtOut
+        writeMChan msgWChan $ ClientAdd cid cEvt
 
-        -- Fetch client requests until the pipe is exhausted.
-        runAndLink $ do
-            req >-> P.map (ClientRequest cid) >-> PC.toOutput msgOut
+        -- Pass on requests from the client, and signal the core when it is closed.
+        linkAsync $ do
+            readUntilClosed cReq $ writeMChan msgWChan . ClientRequest cid
+            writeMChan msgWChan $ ClientDel cid
+            modifyMVar_ dVar (return . D.insert cid)
 
-            -- Client is done, remove it
-            lift . void . PC.atomically . PC.send msgOut $ ClientDel cid
-            lift . modifyMVar_ dVar $ return . D.insert cid
-
-    runAndLink $ bEvt >-> P.map BackendEvent >-> PC.toOutput msgOut
-
-    return $ PC.fromInput msgIn
+    return msgRChan
+    where
+        linkAsync io = async io >>= link
 
 -- | Runs the core.
-run :: Consumer (B.Request s) IO () -- ^ Output requests to the backend.
-    -> Producer B.Event IO ()       -- ^ Incoming events from the backend.
-    -> Producer s IO ()             -- ^ A producer of backend surface data.
-    -> Producer (Consumer Event IO (), Producer Request IO ()) IO () -- ^ New client connections.
+run :: WMChan (B.Request s)                  -- ^ Outgoing requests to the backend.
+    -> RMChan B.Event                        -- ^ Incoming events from the backend.
+    -> IO s                                  -- ^ An IO computation to create a new backend surface.
+    -> RMChan (WMChan Event, RMChan Request) -- ^ New client connections.
     -> IO ()
-run bReq bEvt bSurf clients = do
-    msg     <- msgGenerator clients bEvt
-    surfGet <- createSurfGetter bSurf
+run bReq bEvt bSurfGet newClients = do
+    msg <- msgGenerator newClients bEvt
 
-    (bReqOutput, bReqInput) <- PC.spawn PC.unbounded
-    runAndLink $ PC.fromInput bReqInput >-> bReq
-
-    let cd = CoreData { backendRequest = bReqOutput
-                      , backendSurfGet = surfGet
+    let cd = CoreData { backendRequest = bReq
+                      , backendSurfGet = bSurfGet
                       }
         cs = CoreState { outputs  = []
                        , clients  = M.empty
@@ -310,4 +269,4 @@ run bReq bEvt bSurf clients = do
                        , layedOut = []
                        }
 
-    runCore cd cs . runEffect . for msg $ lift . handleMsg
+    runCore cd cs $ readUntilClosed msg handleMsg

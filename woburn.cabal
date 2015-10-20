@@ -38,7 +38,9 @@ executable woburn
                        pipes,
                        pipes-concurrency,
                        template-haskell,
-                       lens
+                       lens,
+                       stm,
+                       stm-chans
   hs-source-dirs:      src
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -62,4 +64,6 @@ test-suite test
                        pipes-concurrency,
                        template-haskell,
                        lens,
+                       stm,
+                       stm-chans,
                        QuickCheck

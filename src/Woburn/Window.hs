@@ -11,7 +11,7 @@ import Woburn.Surface
 newtype WindowId = WindowId Word32
     deriving (Show, Eq, Ord, Num, Real, Integral, Enum)
 
-data Window a =
+data Window =
     Window { winTitle     :: String             -- ^ Window title.
            , winClass     :: String             -- ^ Window class.
            , winSurface   :: SurfaceId          -- ^ Root surface.

@@ -163,6 +163,12 @@ setUniverse f = do
     u <- f
     modify $ \s -> s { universe = u, layedOut = layout u }
 
+modifyUniverse :: (U.Universe ClientWindowId -> U.Universe ClientWindowId) -> Core s ()
+modifyUniverse f = setUniverse (f <$> gets universe)
+
+modifyClient :: ClientId -> (ClientData s -> ClientData s) -> Core s ()
+modifyClient cid f = modify $ \s -> s { clients = M.adjust f cid (clients s) }
+
 -- | Handles backend events.
 handleBackendEvent :: B.Event -> Core s ()
 handleBackendEvent evt = do
@@ -185,10 +191,15 @@ handleBackendEvent evt = do
 handleCoreRequest :: ClientId -> Request -> Core s ()
 handleCoreRequest cid req =
     case req of
-         WindowCreate       wid sid   -> undefined
-         WindowDestroy      wid       -> undefined
-         WindowSetTitle     wid title -> undefined
-         WindowSetClass     wid cls   -> undefined
+         WindowCreate       wid sid   -> do
+             modifyUniverse $ U.insert (ClientWindowId cid wid)
+             modifyWindows  $ M.insert wid (Window "" "" sid)
+         WindowDestroy      wid       -> do
+             modifyUniverse $ U.delete (ClientWindowId cid wid)
+             modifyWindows  $ M.delete wid
+         WindowSetTitle     wid title -> modifyWindow wid $ \w -> w { winTitle = title }
+         WindowSetClass     wid cls   -> modifyWindow wid $ \w -> w { winClass = cls }
+
          SurfaceCreate      sid       -> undefined
          SurfaceDestroy     sid       -> undefined
          SurfaceAttach      sid tid   -> undefined
@@ -197,6 +208,9 @@ handleCoreRequest cid req =
          SurfaceSetSync     sid sync  -> undefined
          SurfacePlaceAbove  sid tid   -> undefined
          SurfacePlaceBelow  sid tid   -> undefined
+    where
+        modifyWindows f = modifyClient cid $ \c -> c { windows = f (windows c) }
+        modifyWindow wid f = modifyWindows $ M.adjust f wid
 
 handleMsg :: Message -> Core s ()
 handleMsg msg =

@@ -1,4 +1,14 @@
 module Woburn.Universe
+    ( Universe (..)
+    , Screen (..)
+    , Workspace (..)
+    , create
+    , setOutputs
+    , view
+    , greedyView
+    , insert
+    , delete
+    )
 where
 
 import Data.Rect
@@ -53,6 +63,30 @@ view t u = undefined
 greedyView :: String -> Universe a -> Universe a
 greedyView t u = undefined
 
+-- | Insert an item above the currently focused item.
+--
+-- If the 'Universe' does not contain any workspaces, nothing is inserted.
+insert :: (Ord a, Eq a) => a -> Universe a -> Universe a
+insert a u
+    | Z.isEmpty (screens u) = u { hidden = mapFirst addToWorkspace (hidden u) }
+    | otherwise             = u { screens = Z.modify addToScreen (screens u) }
+    where
+        mapFirst _ []     = []
+        mapFirst f (x:xs) = f x : xs
+        addToScreen s = s { workspace = addToWorkspace (workspace s) }
+        addToWorkspace w = w { windows = Z.insert a (windows w) }
+
+-- | Deletes an item from a 'Universe'.
+delete :: (Ord a, Eq a) => a -> Universe a -> Universe a
+delete a u =
+    u { screens  = Z.modify delFromScreen (screens u)
+      , hidden   = map delFromWorkspace (hidden u)
+      , floating = M.delete a (floating u)
+      }
+    where
+        delFromScreen s = s { workspace = delFromWorkspace (workspace s) }
+        delFromWorkspace w = w { windows = Z.delete a (windows w) }
+
 {-
 focusDown :: Universe a -> Universe a
 focusUp :: Universe a -> Universe a
@@ -63,9 +97,6 @@ shift :: String -> Universe a -> Universe a
 shiftWin :: String -> a -> Universe a -> Universe a
 shiftMaster :: Universe a -> Universe a
 swapMaster :: Universe a -> Universe a
-
-insert :: (Ord a, Eq a) => a -> Universe a -> Universe a
-delete :: (Ord a, Eq a) => a -> Universe a -> Universe a
 
 float :: a -> Universe a -> Universe a
 sink :: a -> Universe a -> Universe a

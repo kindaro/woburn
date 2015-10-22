@@ -1,6 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE TupleSections #-}
 module Woburn.Core
     ( Request
@@ -41,12 +40,15 @@ import Woburn.Surface.Tree
 import Woburn.Window
 import qualified Woburn.Universe as U
 
+data ClientWindowId = ClientWindowId ClientId WindowId
+    deriving (Eq, Ord, Show)
+
 data CoreState s =
     CoreState { outputs  :: [MappedOutput]
               , clients  :: M.Map ClientId (ClientData s)
               , ids      :: D.Diet Word32
-              , universe :: U.Universe WindowId
-              , layedOut :: [(MappedOutput, [(Rect Word32, WindowId)])]
+              , universe :: U.Universe ClientWindowId
+              , layedOut :: [(MappedOutput, [(Rect Word32, ClientWindowId)])]
               }
 
 data CoreData s =
@@ -56,7 +58,7 @@ data CoreData s =
 
 data ClientData s =
     ClientData { surfaces :: M.Map SurfaceId (Surface s, Either SurfaceId (STree SurfaceId))
-               , windows  :: M.Map WindowId ()
+               , windows  :: M.Map WindowId Window
                , output   :: WMChan Event
                }
 
@@ -66,7 +68,7 @@ runCore :: CoreData s -> CoreState s -> Core s a -> IO a
 runCore cd cs c = evalStateT (runReaderT c cd) cs
 
 newtype ClientId = ClientId Word32
-    deriving (Eq, Ord, Num, Real, Integral, Enum)
+    deriving (Eq, Ord, Show, Num, Real, Integral, Enum)
 
 data Request =
     WindowCreate WindowId SurfaceId
@@ -156,7 +158,7 @@ deleteOutput oid os =
          (x:xs) -> (Just x, mapOutputs (outputsRight xs) (map mappedOutput as) ++ xs)
 
 -- | Sets the universe, and recomputes the layout.
-setUniverse :: Core s (U.Universe WindowId) -> Core s ()
+setUniverse :: Core s (U.Universe ClientWindowId) -> Core s ()
 setUniverse f = do
     u <- f
     modify $ \s -> s { universe = u, layedOut = layout u }
@@ -199,8 +201,12 @@ handleCoreRequest cid req =
 handleMsg :: Message -> Core s ()
 handleMsg msg =
     case msg of
-         BackendEvent evt      -> handleBackendEvent evt
+         BackendEvent  evt     -> handleBackendEvent evt
          ClientRequest cid req -> handleCoreRequest cid req
+         ClientAdd     cid evt -> modify $ \s -> s { clients = M.insert cid (newClientData evt) (clients s) }
+         ClientDel     cid     -> modify $ \s -> s { clients = M.delete cid (clients s) }
+    where
+        newClientData = ClientData M.empty M.empty
 
 sendBackendRequest :: B.Request s -> Core s ()
 sendBackendRequest req = asks backendRequest >>= liftIO . (`writeMChan` req)

@@ -7,16 +7,9 @@ module Woburn.Surface
     , Buffered (..)
     , Shuffle (..)
     , ShuffleOperation (..)
-    , flipBuffered
+    , commitPosition
     , committed
     , create
-
-{-
-    , setSync
-    , placeAbove
-    , placeBelow
-    , delete
-    -}
     )
 where
 
@@ -58,7 +51,7 @@ data SurfaceState =
 
 data Surface s =
     Surface { surfSync      :: Bool                  -- ^ Whether the surface is in sync mode.
-            , surfState     :: Maybe SurfaceState    -- ^ The latest commit state.
+            , surfState     :: Maybe SurfaceState    -- ^ The pending state that will be used on the next commit.
             , surfPosition  :: Buffered (V2 Int)     -- ^ Surface position relative to parent surface.
             , surfShuffle   :: [Shuffle]             -- ^ Shuffle operations to perform on the next commit.
             , surfCurInput  :: Region Int32          -- ^ Current input region. If this surface is in sync mode
@@ -79,13 +72,17 @@ instance Show a => Show (Surface a) where
         "        , surfData     = " ++ show (surfData s) ++ "\n" ++
         "        }\n"
 
--- | Updates the current value with the pending value, and calculates a new pending value.
-flipBuffered :: (a -> a) -> Buffered a -> Buffered a
-flipBuffered f b = Buffered { currentState = pendingState b
-                            , pendingState = f (pendingState b)
-                            }
+-- | Updates the current value with the pending value.
+flipBuffered :: Buffered a -> Buffered a
+flipBuffered b = b { currentState = pendingState b }
+
+-- | Commits the pending position.
+commitPosition :: Surface a -> Surface a
+commitPosition s = s { surfPosition = flipBuffered (surfPosition s) }
 
 -- | Updates the surface after it has been committed.
+--
+-- Removes the pending state after updating the current input region it.
 committed :: Surface a -> Surface a
 committed surf = surf { surfState    = Nothing
                       , surfCurInput = maybe (surfCurInput surf) surfInput (surfState surf)

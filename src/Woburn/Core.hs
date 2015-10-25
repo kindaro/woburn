@@ -36,7 +36,7 @@ import Woburn.Layout
 import Woburn.Output
 import Woburn.Protocol
 import Woburn.Surface
-import Woburn.Surface.Tree
+import qualified Woburn.Surface.Map as SM
 import Woburn.Window
 import qualified Woburn.Universe as U
 
@@ -57,7 +57,7 @@ data CoreData s =
              }
 
 data ClientData s =
-    ClientData { surfaces :: M.Map SurfaceId (Surface s, Either SurfaceId (STree SurfaceId))
+    ClientData { surfaces :: SM.SurfaceMap s
                , windows  :: M.Map WindowId Window
                , output   :: WMChan Event
                }
@@ -92,9 +92,8 @@ data Event =
   deriving (Eq, Show)
 
 data Error =
-    BadSurface SurfaceId
-  | BadShuffle SurfaceId SurfaceId
-  | BadWindow WindowId
+    BadSurface
+  | BadWindow
   deriving (Eq, Show)
 
 data Message =
@@ -157,17 +156,37 @@ deleteOutput oid os =
          []     -> (Nothing, as)
          (x:xs) -> (Just x, mapOutputs (outputsRight xs) (map mappedOutput as) ++ xs)
 
+backendCommit :: [Surface s] -> Core s ()
+backendCommit ss = do
+    l  <- map (first $ outputId . mappedOutput) <$> gets layedOut
+    cs <- gets clients
+
+    case traverse (runKleisli . second . Kleisli $ mapWindowsToSurfaces cs) l of
+      Nothing -> error "Could not map ClientWindowId to surface tree"
+      Just l' -> sendBackendRequest $ B.SurfaceCommit ss l'
+    where
+        mapWindowsToSurfaces :: M.Map ClientId (ClientData s)
+                             -> [(Rect Word32, ClientWindowId)]
+                             -> Maybe [(Rect Word32, STree (V2 Int32, s))]
+        mapWindowsToSurfaces cs = traverse (runKleisli . second . Kleisli $ mapWindowToSurfaces cs)
+
+        mapWindowToSurfaces :: M.Map ClientId (ClientData s)
+                            -> ClientWindowId
+                            -> Maybe (STree (V2 Int32, s))
+        mapWindowToSurfaces cs (ClientWindowId cid wid) = do
+            cd  <- M.lookup cid cs
+            win <- M.lookup wid (windows cd)
+            fmap (getPosition &&& surfData) <$> SM.lookupSurfaces (winSurface win) (surfaces cd)
+
 -- | Sets the universe, and recomputes the layout.
 setUniverse :: Core s (U.Universe ClientWindowId) -> Core s ()
 setUniverse f = do
     u <- f
     modify $ \s -> s { universe = u, layedOut = layout u }
+    backendCommit []
 
 modifyUniverse :: (U.Universe ClientWindowId -> U.Universe ClientWindowId) -> Core s ()
 modifyUniverse f = setUniverse (f <$> gets universe)
-
-modifyClient :: ClientId -> (ClientData s -> ClientData s) -> Core s ()
-modifyClient cid f = modify $ \s -> s { clients = M.adjust f cid (clients s) }
 
 -- | Handles backend events.
 handleBackendEvent :: B.Event -> Core s ()
@@ -186,7 +205,6 @@ handleBackendEvent evt = do
                   Nothing  -> error "Backend removed a non-existing output"
                   Just out -> sendClientEvent Nothing (OutputRemoved out)
     setUniverse $ U.setOutputs <$> gets outputs <*> gets universe
-    -- TODO: Send Commit request
 
 handleCoreRequest :: ClientId -> Request -> Core s ()
 handleCoreRequest cid req =
@@ -200,17 +218,48 @@ handleCoreRequest cid req =
          WindowSetTitle     wid title -> modifyWindow wid $ \w -> w { winTitle = title }
          WindowSetClass     wid cls   -> modifyWindow wid $ \w -> w { winClass = cls }
 
-         SurfaceCreate      sid       -> undefined
-         SurfaceDestroy     sid       -> undefined
-         SurfaceAttach      sid tid   -> undefined
-         SurfaceCommit      sid ss    -> undefined
-         SurfaceSetPosition sid pos   -> undefined
-         SurfaceSetSync     sid sync  -> undefined
-         SurfacePlaceAbove  sid tid   -> undefined
-         SurfacePlaceBelow  sid tid   -> undefined
+         SurfaceCreate      sid      -> do
+             sg   <- asks backendSurfGet
+             surf <- create <$> liftIO sg
+             modifySurfaces $ SM.insertNew sid surf
+         SurfaceDestroy     sid      -> checkError BadSurface . modifySurfacesFail $ SM.delete sid
+         SurfaceAttach      sid tid  -> checkError BadSurface . modifySurfacesFail $ SM.attach sid tid
+         SurfaceCommit      sid ss   -> checkError BadSurface . modifyAndCommitSurfaces $ SM.commit sid ss
+         SurfaceSetPosition sid pos  -> modifySurface (setPosition pos) sid
+         SurfaceSetSync     sid sync -> checkError BadSurface . modifyAndCommitSurfaces $ SM.setSync sid sync
+         SurfacePlaceAbove  sid tid  -> checkError BadSurface . modifySurfacesFail $ SM.shuffle PlaceAbove sid tid
+         SurfacePlaceBelow  sid tid  -> checkError BadSurface . modifySurfacesFail $ SM.shuffle PlaceBelow sid tid
     where
-        modifyWindows f = modifyClient cid $ \c -> c { windows = f (windows c) }
+        modifyClient :: (ClientData s -> ClientData s) -> Core s ()
+        modifyClient f = modify $ \s -> s { clients = M.adjust f cid (clients s) }
+        modifyWindows f = modifyClient $ \c -> c { windows = f (windows c) }
         modifyWindow wid f = modifyWindows $ M.adjust f wid
+        modifySurfaces f = modifyClient $ \c -> c { surfaces = f (surfaces c) }
+        modifySurface f = modifySurfaces . SM.modifySurface f
+
+        modifyClientFail :: (ClientData s -> Maybe (ClientData s)) -> Core s Bool
+        modifyClientFail f = state $ \s ->
+            case M.lookup cid (clients s) >>= f of
+              Nothing -> (False, s)
+              Just cd -> (True , s { clients = M.insert cid cd (clients s) })
+
+        modifySurfacesFail f = modifyClientFail $ \cd ->
+            (\s -> cd { surfaces = s }) <$> f (surfaces cd)
+
+        stateClient :: (ClientData s -> Maybe (a, ClientData s)) -> Core s (Maybe a)
+        stateClient f = state $ \s ->
+            case M.lookup cid (clients s) >>= f of
+              Nothing      -> (Nothing, s)
+              Just (a, cd) -> (Just a , s { clients = M.insert cid cd (clients s) })
+
+        modifyAndCommitSurfaces f = do
+            ms <- stateClient $ \cd ->
+                second (\sm -> cd { surfaces = sm }) <$> f (surfaces cd)
+            case ms of
+              Nothing -> return False
+              Just ss -> True <$ backendCommit ss
+
+        checkError err m = m >>= (`unless` sendClientEvent (Just cid) (Error err))
 
 handleMsg :: Message -> Core s ()
 handleMsg msg =

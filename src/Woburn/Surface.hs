@@ -8,6 +8,8 @@ module Woburn.Surface
     , Shuffle (..)
     , ShuffleOperation (..)
     , commitPosition
+    , getPosition
+    , setPosition
     , committed
     , create
     )
@@ -40,7 +42,7 @@ data ShuffleOperation =
 
 data SurfaceState =
     SurfaceState { surfBuffer       :: Maybe Buffer
-                 , surfBufferOffset :: V2 Int
+                 , surfBufferOffset :: V2 Int32
                  , surfBufferScale  :: Int
                  , surfDamage       :: Region Int32
                  , surfOpaque       :: Region Int32
@@ -52,7 +54,7 @@ data SurfaceState =
 data Surface s =
     Surface { surfSync      :: Bool                  -- ^ Whether the surface is in sync mode.
             , surfState     :: Maybe SurfaceState    -- ^ The pending state that will be used on the next commit.
-            , surfPosition  :: Buffered (V2 Int)     -- ^ Surface position relative to parent surface.
+            , surfPosition  :: Buffered (V2 Int32)   -- ^ Surface position relative to parent surface.
             , surfShuffle   :: [Shuffle]             -- ^ Shuffle operations to perform on the next commit.
             , surfCurInput  :: Region Int32          -- ^ Current input region. If this surface is in sync mode
                                                      --   this is copied from the current state when the parent
@@ -79,6 +81,14 @@ flipBuffered b = b { currentState = pendingState b }
 -- | Commits the pending position.
 commitPosition :: Surface a -> Surface a
 commitPosition s = s { surfPosition = flipBuffered (surfPosition s) }
+
+-- | Sets the pending position.
+setPosition :: V2 Int32 -> Surface a -> Surface a
+setPosition pos s = s { surfPosition = (surfPosition s) { pendingState = pos } }
+
+-- | Gets the current position.
+getPosition :: Surface a -> V2 Int32
+getPosition = currentState . surfPosition
 
 -- | Updates the surface after it has been committed.
 --

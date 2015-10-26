@@ -10,6 +10,7 @@ import Control.Applicative
 import Data.Foldable hiding (concatMap)
 import Data.Monoid
 import Data.Traversable
+import Prelude
 
 data STree a = STree [STree a] a [STree a]
     deriving (Eq, Show)

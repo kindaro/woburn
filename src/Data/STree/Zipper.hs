@@ -36,6 +36,7 @@ import Data.List (unfoldr)
 import Data.Maybe (listToMaybe)
 import Data.Sequence (singleton, viewl, ViewL (..), (><), fromList)
 import Data.STree hiding (singleton)
+import Prelude
 
 data Branch a =
     TurnLeft  [STree a] [STree a] a [STree a]
@@ -59,9 +60,9 @@ a <++> b = reverse a ++ b
 
 -- | Moves to the parent node if one exists, otherwise it returns 'Nothing'.
 up :: Zipper a -> Maybe (Zipper a)
-up (Zipper _ []                                   ) = Nothing
-up (Zipper n (TurnLeft  before after x right : bs)) = Just $ Zipper (STree (before <++> n : after) x right) bs
-up (Zipper n (TurnRight before after x left  : bs)) = Just $ Zipper (STree left x  (before <++> n : after)) bs
+up (Zipper _ []                                ) = Nothing
+up (Zipper n (TurnLeft  before after x rs : bs)) = Just $ Zipper (STree (before <++> n : after) x rs) bs
+up (Zipper n (TurnRight before after x ls : bs)) = Just $ Zipper (STree ls x  (before <++> n : after)) bs
 
 -- | Returns a zipper for the left-most child.
 down :: Zipper a -> Maybe (Zipper a)

@@ -10,11 +10,11 @@ module Woburn.Core
     )
 where
 
+import Control.Applicative
 import Control.Arrow
 import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Concurrent.MChan.Split
-import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Lens hiding (universe)

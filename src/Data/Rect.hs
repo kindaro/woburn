@@ -9,12 +9,12 @@ module Data.Rect
     )
 where
 
-import Control.Lens ((%~), (^.))
+import Control.Lens ((&), (%~), (^.))
 import Data.Function
 import Linear
 
 -- | An inclusive rectangle.
--- 
+--
 -- The first argument is the position of the upper-left corner, the second the
 -- lower-right corner.
 data Rect a =

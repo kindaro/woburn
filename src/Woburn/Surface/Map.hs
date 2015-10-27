@@ -11,10 +11,13 @@ module Woburn.Surface.Map
     )
 where
 
+import Control.Applicative
 import Control.Arrow
 import qualified Data.Map as M
 import Data.STree
 import qualified Data.STree.Zipper as Z
+import Data.Traversable
+import Prelude
 import Woburn.Surface
 import qualified Woburn.Surface.Tree as ST
 

@@ -23,9 +23,11 @@ module Control.Concurrent.MChan.Split
     )
 where
 
+import Control.Applicative
 import Control.Arrow
 import Control.Monad.IO.Class
 import qualified Control.Concurrent.MChan as M
+import Prelude
 
 -- | An opaque type representing the read end of the channel.
 newtype RMChan a = RMChan { unRMChan :: M.MChan a }

@@ -3,6 +3,8 @@ module Woburn.Path
     )
 where
 
+import Control.Applicative
+import Prelude
 import System.Process
 
 -- | Uses pkg-config to find the path of the wayland protocol specification.

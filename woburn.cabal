@@ -26,7 +26,7 @@ executable woburn
                        Woburn.Protocol
                        Woburn.Surface
   -- other-extensions:    
-  build-depends:       base >=4.8 && <4.9,
+  build-depends:       base >=4.7 && <4.9,
                        wayland-wire,
                        linear >= 1.9 && < 2.0,
                        containers,
@@ -49,7 +49,7 @@ test-suite test
   main-is:             Test.hs
   hs-source-dirs:      tests src
   ghc-options:         -Wall
-  build-depends:       base >=4.8 && <4.9,
+  build-depends:       base >=4.7 && <4.9,
                        wayland-wire,
                        linear >= 1.9 && < 2.0,
                        containers,

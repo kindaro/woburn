@@ -19,8 +19,10 @@ module Control.Concurrent.MChan
     )
 where
 
+import Control.Applicative
 import Control.Concurrent.STM
 import Control.Concurrent.STM.TMChan
+import Prelude
 
 newtype MChan a = MChan { unMChan :: TMChan a }
 

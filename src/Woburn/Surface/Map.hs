@@ -80,31 +80,49 @@ updateChildren :: STree SurfaceId
                -> SurfaceMap s
 updateChildren (STree ls _ rs) ss = foldr updateTree ss (ls ++ rs)
 
+-- | Detaches a surface from the surface it is currently attached, or does
+-- nothing if it is not attached to another surface.
+detach :: SurfaceId
+       -> SurfaceMap s
+       -> Maybe (SurfaceMap s)
+detach sid ss = do
+    stree <- lookupSTree sid ss
+    ptr   <- ST.findSid sid stree
+    return $ case ST.delete sid stree of
+               Nothing                    -> ss
+               Just (stree', subtree, sh) ->
+                   foldr ($) ss
+                   [ maybe id (insertShuffle sh . label . Z.getTree) (Z.up ptr)
+                   , updateTree stree'
+                   , updateTree subtree
+                   ]
+
 -- | Deletes a 'Surface' from the 'SurfaceMap'.
 delete :: SurfaceId
        -> SurfaceMap s
        -> Maybe (SurfaceMap s)
 delete sid ss = do
-    stree <- lookupSTree sid ss
-    ptr   <- ST.findSid sid stree
-
-    let ops = M.delete sid :
-                case ST.delete sid stree of
-                  Nothing -> [ updateChildren stree ]
-                  Just (stree', subtree, sh) ->
-                      [ maybe id (insertShuffle sh . label . Z.getTree) (Z.up ptr)
-                      , updateTree stree'
-                      , updateChildren subtree
-                      ]
-
-    return $ foldr ($) ss ops
+    ss'   <- detach sid ss
+    stree <- lookupSTree sid ss'
+    return $ foldr ($) ss'
+        [ updateChildren stree
+        , M.delete sid
+        ]
 
 -- | Attaches a surface to another surface.
 attach :: SurfaceId
        -> Maybe SurfaceId
        -> SurfaceMap s
        -> Maybe (SurfaceMap s)
-attach sid tid ss = undefined
+attach sid mtid ss = do
+    ss' <- detach sid ss
+    case mtid of
+      Nothing  -> return ss'
+      Just tid -> do
+          stree <- lookupSTree sid ss'
+          ttree <- lookupSTree tid ss'
+          ptr   <- ST.findSid tid ttree
+          return $ updateTree (Z.toTree $ Z.insert stree ptr) ss'
 
 shuffle :: ShuffleOperation
         -> SurfaceId
@@ -112,7 +130,7 @@ shuffle :: ShuffleOperation
         -> SurfaceMap s
         -> Maybe (SurfaceMap s)
 shuffle op sid tid ss = undefined
-        
+
 commit :: SurfaceId
        -> SurfaceState
        -> SurfaceMap s

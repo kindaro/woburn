@@ -227,8 +227,8 @@ handleCoreRequest cid req =
          SurfaceCommit      sid ss   -> checkError BadSurface . modifyAndCommitSurfaces $ SM.commit sid ss
          SurfaceSetPosition sid pos  -> modifySurface (setPosition pos) sid
          SurfaceSetSync     sid sync -> checkError BadSurface . modifyAndCommitSurfaces $ SM.setSync sid sync
-         SurfacePlaceAbove  sid tid  -> checkError BadSurface . modifySurfacesFail $ SM.shuffle PlaceAbove sid tid
-         SurfacePlaceBelow  sid tid  -> checkError BadSurface . modifySurfacesFail $ SM.shuffle PlaceBelow sid tid
+         SurfacePlaceAbove  sid tid  -> checkError BadSurface . modifySurfacesFail $ SM.addShuffle PlaceAbove sid tid
+         SurfacePlaceBelow  sid tid  -> checkError BadSurface . modifySurfacesFail $ SM.addShuffle PlaceBelow sid tid
     where
         modifyClient :: (ClientData s -> ClientData s) -> Core s ()
         modifyClient f = modify $ \s -> s { clients = M.adjust f cid (clients s) }

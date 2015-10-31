@@ -5,7 +5,7 @@ module Woburn.Surface.Map
     , insertNew
     , delete
     , attach
-    , shuffle
+    , addShuffle
     , commit
     , setSync
     )
@@ -124,12 +124,18 @@ attach sid mtid ss = do
           ptr   <- ST.findSid tid ttree
           return $ updateTree (Z.toTree $ Z.insert stree ptr) ss'
 
-shuffle :: ShuffleOperation
-        -> SurfaceId
-        -> SurfaceId
-        -> SurfaceMap s
-        -> Maybe (SurfaceMap s)
-shuffle op sid tid ss = undefined
+-- | Adds a shuffle operation that will be executed at the next commit of the
+-- common root.
+addShuffle :: ShuffleOperation
+           -> SurfaceId
+           -> SurfaceId
+           -> SurfaceMap s
+           -> Maybe (SurfaceMap s)
+addShuffle op sid tid ss = do
+    let sh = Shuffle op sid tid
+    stree <- lookupSTree sid ss
+    root  <- ST.findCommonRoot sid tid stree
+    return $ M.adjust (first $ \s -> s { surfShuffle = sh : surfShuffle s }) root ss
 
 commit :: SurfaceId
        -> SurfaceState

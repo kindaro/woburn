@@ -221,7 +221,7 @@ handleCoreRequest cid req =
          SurfaceCreate      sid      -> do
              sg   <- asks backendSurfGet
              surf <- create <$> liftIO sg
-             modifySurfaces $ SM.insertNew sid surf
+             modifySurfaces $ SM.insert sid surf
          SurfaceDestroy     sid      -> checkError BadSurface . modifySurfacesFail $ SM.delete sid
          SurfaceAttach      sid tid  -> checkError BadSurface . modifySurfacesFail $ SM.attach sid tid
          SurfaceCommit      sid ss   -> checkError BadSurface . modifyAndCommitSurfaces $ SM.setState sid ss

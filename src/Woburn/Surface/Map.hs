@@ -3,7 +3,7 @@ module Woburn.Surface.Map
     , empty
     , lookupSurfaces
     , modifySurface
-    , insertNew
+    , insert
     , delete
     , attach
     , addShuffle
@@ -76,11 +76,11 @@ insertShuffle :: Shuffle
 insertShuffle sh = M.adjust . first $ \s -> s { surfShuffle = sh : surfShuffle s }
 
 -- | Inserts a new 'Surface' into the 'SurfaceMap'.
-insertNew :: SurfaceId
-          -> Surface s
-          -> SurfaceMap s
-          -> SurfaceMap s
-insertNew sid surf = M.insert sid (surf, Right $ singleton sid)
+insert :: SurfaceId
+       -> Surface s
+       -> SurfaceMap s
+       -> SurfaceMap s
+insert sid surf = M.insert sid (surf, Right $ singleton sid)
 
 -- | Updates the surface tree.
 updateTree :: STree SurfaceId

@@ -6,7 +6,7 @@ module Woburn.Surface.Map
     , delete
     , attach
     , addShuffle
-    , commit
+    , setState
     , setSync
     )
 where
@@ -149,14 +149,70 @@ addShuffle op sid tid ss = do
     root  <- ST.findCommonRoot sid tid stree
     return $ M.adjust (first $ \s -> s { surfShuffle = sh : surfShuffle s }) root ss
 
+-- | Checks if a surface is in sync mode.
+--
+-- A surface is in sync mode if the sync flag is set in it, or any of its
+-- ancestors.
+inSyncMode :: SurfaceId
+           -> SurfaceMap s
+           -> Maybe Bool
+inSyncMode sid sm = do
+    idPtr  <- lookupZipper sid sm
+    sPtr   <- fmap surfSync <$> traverse (`lookupSurface` sm) idPtr
+    return . or $ map (label . Z.getTree) (sPtr : Z.parents sPtr)
+
+-- | Commits a surface, and any sub-trees that are in sync mode.
+--
+-- When a surface is committed the current surface state is swapped with the
+-- pending surface state, and the position of the sub-surfaces are updated.
 commit :: SurfaceId
-       -> SurfaceState
        -> SurfaceMap s
        -> Maybe ([Surface s], SurfaceMap s)
-commit sid sm = undefined
+commit sid sm = do
+    ptr  <- traverse (runKleisli $ Kleisli (`lookupSurface` sm) &&& returnA) =<< lookupZipper sid sm
+    sync <- inSyncMode sid sm
+    return . helper (not sync) ([], sm) $ Z.getTree ptr
+    where
+        helper checkSync (ss, sm') (STree ls (surf, tid) rs)
+            | isNothing (surfState surf) = (ss, sm)
+            | otherwise =
+                let sm'' = applyOps ( modifySurface committed tid
+                                    : map (modifySurface commitPosition . snd . label) (ls ++ rs)
+                                    ) sm'
+                    cs   = map (\(STree l n r) -> STree l (first commitPosition n) r) $
+                            if checkSync
+                              then filter (surfSync . fst . label) (ls ++ rs)
+                              else ls ++ rs
+                in
+                foldl' (helper False) (surf : ss, sm'') cs
 
+-- | Sets a new surface state for the specified surface.
+--
+-- If the surface is in sync mode, the new state will not be applied until its
+-- parent surface's state is applied.
+setState :: SurfaceId
+         -> SurfaceState
+         -> SurfaceMap s
+         -> Maybe ([Surface s], SurfaceMap s)
+setState sid st sm = do
+    let sm' = modifySurface (\s -> s { surfState = Just st } ) sid sm
+    sync <- inSyncMode sid sm'
+    if sync
+      then return ([], sm')
+      else commit sid sm'
+
+-- | Updates the synchronization mode on a surface.
+--
+-- If the surface is no longer in synchronized mode after the update, and it
+-- has uncommitted state, it will be committed.
 setSync :: SurfaceId
         -> Bool
         -> SurfaceMap s
         -> Maybe ([Surface s], SurfaceMap s)
-setSync sid sync sm = undefined
+setSync sid sync sm = do
+    let sm' = modifySurface (\s -> s { surfSync = sync }) sid sm
+    inSync <- inSyncMode sid sm'
+    st     <- surfState <$> lookupSurface sid sm'
+    if inSync || isNothing st
+      then return ([], sm')
+      else commit sid sm'

@@ -269,7 +269,7 @@ handleMsg msg =
          ClientAdd     cid evt -> modify $ \s -> s { clients = M.insert cid (newClientData evt) (clients s) }
          ClientDel     cid     -> modify $ \s -> s { clients = M.delete cid (clients s) }
     where
-        newClientData = ClientData M.empty M.empty
+        newClientData = ClientData SM.empty M.empty
 
 sendBackendRequest :: B.Request s -> Core s ()
 sendBackendRequest req = asks backendRequest >>= liftIO . (`writeMChan` req)

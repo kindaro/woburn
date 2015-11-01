@@ -1,5 +1,6 @@
 module Woburn.Surface.Map
     ( SurfaceMap
+    , empty
     , lookupSurfaces
     , modifySurface
     , insertNew
@@ -11,7 +12,7 @@ module Woburn.Surface.Map
     )
 where
 
-import Control.Applicative
+import Control.Applicative hiding (empty)
 import Control.Arrow
 import qualified Data.Map as M
 import Data.Foldable
@@ -24,6 +25,10 @@ import Woburn.Surface
 import qualified Woburn.Surface.Tree as ST
 
 type SurfaceMap s = M.Map SurfaceId (Surface s, Either SurfaceId (STree SurfaceId))
+
+-- | An empty 'SurfaceMap'.
+empty :: SurfaceMap s
+empty = M.empty
 
 -- | Maps 'SurfaceId' to the 'STree' it belongs in.
 lookupSTree :: SurfaceId

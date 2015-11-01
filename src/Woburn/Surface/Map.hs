@@ -14,6 +14,8 @@ where
 import Control.Applicative
 import Control.Arrow
 import qualified Data.Map as M
+import Data.Foldable
+import Data.Maybe
 import Data.STree
 import qualified Data.STree.Zipper as Z
 import Data.Traversable
@@ -47,6 +49,13 @@ lookupSurfaces :: SurfaceId
                -> Maybe (STree (Surface s))
 lookupSurfaces sid sm = traverse (`lookupSurface` sm) =<< lookupSTree sid sm
 
+-- | Maps 'SurfaceId' to the 'STree' it belongs in, and returns a pointer to
+-- its position within the tree.
+lookupZipper :: SurfaceId
+             -> SurfaceMap s
+             -> Maybe (Z.Zipper SurfaceId)
+lookupZipper sid sm = lookupSTree sid sm >>= ST.findSid sid
+
 -- | Modifies a surface.
 modifySurface :: (Surface s -> Surface s)
               -> SurfaceId
@@ -78,7 +87,13 @@ updateTree st = M.adjust (second . const $ Right st) (label st)
 updateChildren :: STree SurfaceId
                -> SurfaceMap s
                -> SurfaceMap s
-updateChildren (STree ls _ rs) ss = foldr updateTree ss (ls ++ rs)
+updateChildren (STree ls _ rs) ss = foldl' (flip updateTree) ss (ls ++ rs)
+
+-- | Applies a list of operations on a surface map.
+--
+-- The operations are applied left-to-right.
+applyOps :: [SurfaceMap s -> SurfaceMap s] -> SurfaceMap s -> SurfaceMap s
+applyOps ops sm = foldl' (flip ($)) sm ops
 
 -- | Detaches a surface from the surface it is currently attached, or does
 -- nothing if it is not attached to another surface.
@@ -91,11 +106,12 @@ detach sid ss = do
     return $ case ST.delete sid stree of
                Nothing                    -> ss
                Just (stree', subtree, sh) ->
-                   foldr ($) ss
+                   applyOps
                    [ maybe id (insertShuffle sh . label . Z.getTree) (Z.up ptr)
                    , updateTree stree'
                    , updateTree subtree
                    ]
+                   ss
 
 -- | Deletes a 'Surface' from the 'SurfaceMap'.
 delete :: SurfaceId
@@ -104,10 +120,7 @@ delete :: SurfaceId
 delete sid ss = do
     ss'   <- detach sid ss
     stree <- lookupSTree sid ss'
-    return $ foldr ($) ss'
-        [ updateChildren stree
-        , M.delete sid
-        ]
+    return $ applyOps [ updateChildren stree, M.delete sid ] ss'
 
 -- | Attaches a surface to another surface.
 attach :: SurfaceId
@@ -120,8 +133,7 @@ attach sid mtid ss = do
       Nothing  -> return ss'
       Just tid -> do
           stree <- lookupSTree sid ss'
-          ttree <- lookupSTree tid ss'
-          ptr   <- ST.findSid tid ttree
+          ptr   <- lookupZipper tid ss'
           return $ updateTree (Z.toTree $ Z.insert stree ptr) ss'
 
 -- | Adds a shuffle operation that will be executed at the next commit of the

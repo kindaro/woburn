@@ -29,7 +29,11 @@ instance (Eq a, Arbitrary a) => Arbitrary (STree a) where
                     <*> vectorOf r (f n')
 
     shrink (STree [] _ []) = []
-    shrink (STree l  n r ) = [STree [] n []] ++ l ++ r
+    shrink (STree l  n r ) =
+        [STree [] n []]
+        ++ l
+        ++ r
+        ++ [STree l' n r' | (l', r') <- shrink (l, r)]
 
 instance Arbitrary a => Arbitrary (Surface a) where
     arbitrary = do

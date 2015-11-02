@@ -38,7 +38,8 @@ executable woburn
                        template-haskell,
                        lens,
                        stm,
-                       stm-chans
+                       stm-chans,
+                       dlist
   hs-source-dirs:      src
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -62,4 +63,5 @@ test-suite test
                        lens,
                        stm,
                        stm-chans,
+                       dlist,
                        QuickCheck

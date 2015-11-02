@@ -96,6 +96,7 @@ getPosition = currentState . surfPosition
 committed :: Surface a -> Surface a
 committed surf = surf { surfState    = Nothing
                       , surfCurInput = maybe (surfCurInput surf) surfInput (surfState surf)
+                      , surfShuffle  = []
                       }
 
 -- | Creates a new surface.

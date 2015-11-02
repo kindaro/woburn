@@ -15,6 +15,9 @@ where
 
 import Control.Applicative hiding (empty)
 import Control.Arrow
+import Control.Monad.State.Strict
+import Control.Monad.Writer.Strict
+import qualified Data.DList as DL
 import qualified Data.Map as M
 import Data.Foldable
 import Data.Maybe
@@ -129,8 +132,8 @@ delete sid ss = do
     return $ applyOps [ updateChildren stree, M.delete sid ] ss'
 
 -- | Attaches a surface to another surface.
-attach :: SurfaceId
-       -> Maybe SurfaceId
+attach :: SurfaceId         -- The surface to attach.
+       -> Maybe SurfaceId   -- The surface to attach to, or 'Nothing' to make it a root surface.
        -> SurfaceMap s
        -> Maybe (SurfaceMap s)
 attach sid mtid ss = do
@@ -140,7 +143,9 @@ attach sid mtid ss = do
       Just tid -> do
           stree <- lookupSTree sid ss'
           ptr   <- lookupZipper tid ss'
-          return $ updateTree (Z.toTree $ Z.insert stree ptr) ss'
+          return $ applyOps [ updateTree (Z.toTree $ Z.insert stree ptr)
+                            , M.adjust (second . const $ Left tid) sid
+                            ] ss'
 
 -- | Adds a shuffle operation that will be executed at the next commit of the
 -- common root.
@@ -153,7 +158,7 @@ addShuffle op sid tid ss = do
     let sh = Shuffle op sid tid
     stree <- lookupSTree sid ss
     root  <- ST.findCommonRoot sid tid stree
-    return $ M.adjust (first $ \s -> s { surfShuffle = sh : surfShuffle s }) root ss
+    return $ modifySurface (\s -> s { surfShuffle = sh : surfShuffle s }) root ss
 
 -- | Checks if a surface is in sync mode.
 --
@@ -170,27 +175,40 @@ inSyncMode sid sm = do
 -- | Commits a surface, and any sub-trees that are in sync mode.
 --
 -- When a surface is committed the current surface state is swapped with the
--- pending surface state, and the position of the sub-surfaces are updated.
+-- pending surface state, the position of the sub-surfaces are updated and
+-- pending shuffles are applied.
 commit :: SurfaceId
        -> SurfaceMap s
        -> Maybe ([Surface s], SurfaceMap s)
 commit sid sm = do
-    ptr  <- traverse (runKleisli $ Kleisli (`lookupSurface` sm) &&& returnA) =<< lookupZipper sid sm
+    ptr  <- lookupZipper sid sm
     sync <- inSyncMode sid sm
-    return . helper (not sync) ([], sm) $ Z.getTree ptr
+    ((ptr', ss), sm') <- flip runStateT sm . runWriterT $ Z.modifyA (helper 0 sync) ptr
+    return (DL.toList ss, updateTree (Z.toTree ptr') sm')
     where
-        helper checkSync (ss, sm') (STree ls (surf, tid) rs)
-            | isNothing (surfState surf) = (ss, sm)
-            | otherwise =
-                let sm'' = applyOps ( modifySurface committed tid
-                                    : map (modifySurface commitPosition . snd . label) (ls ++ rs)
-                                    ) sm'
-                    cs   = map (\(STree l n r) -> STree l (first commitPosition n) r) $
-                            if checkSync
-                              then filter (surfSync . fst . label) (ls ++ rs)
-                              else ls ++ rs
-                in
-                foldl' (helper False) (surf : ss, sm'') cs
+        -- Helper function that traverses the surface tree with sid as its
+        -- root. It will commit the root surface, as well as any sub-trees that
+        -- are in sync-mode. If it hits a surface that has been committed (no
+        -- pending state), it will stop the recursion.
+        helper :: Int               -- The depth in the tree, the root is at depth 0.
+               -> Bool              -- Whether the root surface is in sync mode.
+               -> STree SurfaceId   -- The tree.
+               -> WriterT (DL.DList (Surface s)) (StateT (SurfaceMap s) Maybe) (STree SurfaceId)
+        helper level rootSync t@(STree _ tid _) = do
+            surf <- lift . lift . lookupSurface tid =<< get
+            case (level /= 1 || rootSync || surfSync surf, surfState surf) of
+              (False, _      ) -> return t
+              (_    , Nothing) -> return t
+              (_    , Just _ ) -> do
+                  (STree ls _ rs) <- lift . lift $ ST.shuffle (surfShuffle surf) t
+                  tell $ DL.singleton surf
+                  modify (applyOps ( modifySurface committed tid
+                                   : map (modifySurface commitPosition . label) (ls ++ rs)
+                                   ) )
+                  STree
+                      <$> traverse (helper (level + 1) rootSync) ls
+                      <*> pure tid
+                      <*> traverse (helper (level + 1) rootSync) rs
 
 -- | Sets a new surface state for the specified surface.
 --

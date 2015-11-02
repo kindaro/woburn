@@ -1,6 +1,7 @@
 module Woburn.Surface.Map
     ( SurfaceMap
     , empty
+    , lookupSTree
     , lookupSurfaces
     , modifySurface
     , insert

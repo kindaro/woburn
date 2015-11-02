@@ -1,12 +1,15 @@
 import Control.Applicative
 import Control.Monad
+import Prelude
 import System.Exit
 import Test.MChan
+import Test.SurfaceMap
 import Test.SurfaceTree
 import Test.Zipper
 
 tests :: [IO Bool]
 tests = [ surfaceTreeTests
+        , surfaceMapTests
         , zipperTests
         , mChanTests
         ]

@@ -11,6 +11,12 @@ import Data.STree.Zipper
 import Test.Arbitrary ()
 import Test.QuickCheck hiding (label)
 
+prop_insert :: Word32 -> [Word32] -> Property
+prop_insert root cs =
+    let ct = map singleton cs
+    in
+    toTree (foldr insert (fromTree (singleton root)) ct) === STree ct root []
+
 prop_down :: STree Word32 -> Property
 prop_down t =
     case (t, down $ fromTree t) of

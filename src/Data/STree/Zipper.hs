@@ -210,4 +210,4 @@ delete (Zipper n (b:bs)) =
 
 -- | Inserts a tree as the left-most child of the focused tree.
 insert :: STree a -> Zipper a -> Zipper a
-insert a (Zipper (STree l n r) bs) = Zipper (STree (l ++ [a]) n r) bs
+insert a (Zipper (STree l n r) bs) = Zipper (STree (a : l) n r) bs

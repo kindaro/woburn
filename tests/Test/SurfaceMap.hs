@@ -4,11 +4,13 @@ module Test.SurfaceMap
     )
 where
 
+import Control.Arrow
 import Data.Foldable
 import Data.Maybe
 import Data.List
 import Data.Region
 import Data.STree
+import qualified Data.STree.Zipper as Z
 import Linear
 import Prelude hiding (foldr)
 import Woburn.Protocol
@@ -16,6 +18,7 @@ import Woburn.Surface
 import qualified Woburn.Surface.Map as SM
 import Test.Arbitrary ()
 import Test.QuickCheck hiding (label)
+import Test.QuickCheck.Monadic
 
 surfaceMapFromIds :: [SurfaceId] -> SM.SurfaceMap SurfaceId
 surfaceMapFromIds = foldl' (\sm sid -> SM.insert sid (create sid) sm) SM.empty
@@ -53,16 +56,53 @@ insertSTree stree sm =
 surfaceMapFromSTrees :: [STree SurfaceId] -> Maybe (SM.SurfaceMap SurfaceId)
 surfaceMapFromSTrees = foldlM (flip insertSTree) SM.empty
 
+checkTree :: SM.SurfaceMap SurfaceId -> STree SurfaceId -> Property
+checkTree sm tree = conjoin . map ((=== Just tree) . (`SM.lookupSTree` sm)) $ toList tree
+
 prop_insert :: [SurfaceId] -> Property
 prop_insert ids =
     mapM (`SM.lookupSurfaces` surfaceMapFromIds ids) ids === Just (map (singleton . create) ids)
 
 prop_attach :: STree SurfaceId -> Property
 prop_attach stree =
-    let ids = foldr (:) [] stree
+    let ids = toList stree
         sm  = surfaceMapFromSTrees [stree]
     in
     forAll (elements ids) $ \sid -> (sm >>= SM.lookupSTree sid) === Just stree
+
+prop_delete :: STree SurfaceId -> Property
+prop_delete stree =
+    monadic (fromMaybe $ property False) $ do
+        sid <- pick . elements $ toList stree
+        sm  <- run $ SM.delete sid =<< surfaceMapFromSTrees [stree]
+
+        let trees =
+                (\(ps, STree ls _ rs) -> ps ++ ls ++ rs) $
+                    maybe
+                    ([], stree)
+                    (first $ (:[]) . Z.toTree)
+                    (Z.delete =<< Z.findFirst ((== sid) . label) stree)
+
+        stop $
+            sort (concatMap toList trees) === sort (filter (/= sid) (toList stree))
+            .&&. SM.lookupSTree sid sm === Nothing
+            .&&. SM.lookupSurfaces sid sm === Nothing
+            .&&. conjoin (map (checkTree sm) trees)
+
+prop_detach :: STree SurfaceId -> Property
+prop_detach stree =
+    monadic (fromMaybe $ property False) $ do
+        sid <- pick . elements $ toList stree
+        sm  <- run $ SM.attach sid Nothing =<< surfaceMapFromSTrees [stree]
+
+        let trees =
+                uncurry (flip (:)) $
+                    maybe
+                    ([], stree)
+                    (first $ (:[]) . Z.toTree)
+                    (Z.delete =<< Z.findFirst ((== sid) . label) stree)
+
+        stop $ conjoin (map (checkTree sm) trees)
 
 return []
 surfaceMapTests :: IO Bool

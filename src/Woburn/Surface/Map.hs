@@ -188,20 +188,18 @@ commit sid sm = do
     where
         -- Helper function that traverses the surface tree with sid as its
         -- root. It will commit the root surface, as well as any sub-trees that
-        -- are in sync-mode. If it hits a surface that has been committed (no
-        -- pending state), it will stop the recursion.
+        -- are in sync-mode.
         helper :: Int               -- The depth in the tree, the root is at depth 0.
                -> Bool              -- Whether the root surface is in sync mode.
                -> STree SurfaceId   -- The tree.
                -> WriterT (DL.DList (Surface s)) (StateT (SurfaceMap s) Maybe) (STree SurfaceId)
         helper level rootSync t@(STree _ tid _) = do
             surf <- lift . lift . lookupSurface tid =<< get
-            case (level /= 1 || rootSync || surfSync surf, surfState surf) of
-              (False, _      ) -> return t
-              (_    , Nothing) -> return t
-              (_    , Just _ ) -> do
+            if level == 1 && not rootSync && not (surfSync surf)
+              then return t
+              else do
                   (STree ls _ rs) <- lift . lift $ ST.shuffle (surfShuffle surf) t
-                  tell $ DL.singleton surf
+                  unless (isNothing $ surfState surf) . tell $ DL.singleton surf
                   modify (applyOps ( modifySurface committed tid
                                    : map (modifySurface commitPosition . label) (ls ++ rs)
                                    ) )
@@ -214,11 +212,11 @@ commit sid sm = do
 --
 -- If the surface is in sync mode, the new state will not be applied until its
 -- parent surface's state is applied.
-setState :: SurfaceId
-         -> SurfaceState
+setState :: SurfaceState
+         -> SurfaceId
          -> SurfaceMap s
          -> Maybe ([Surface s], SurfaceMap s)
-setState sid st sm = do
+setState st sid sm = do
     let sm' = modifySurface (\s -> s { surfState = Just st } ) sid sm
     sync <- inSyncMode sid sm'
     if sync
@@ -229,11 +227,11 @@ setState sid st sm = do
 --
 -- If the surface is no longer in synchronized mode after the update, and it
 -- has uncommitted state, it will be committed.
-setSync :: SurfaceId
-        -> Bool
+setSync :: Bool
+        -> SurfaceId
         -> SurfaceMap s
         -> Maybe ([Surface s], SurfaceMap s)
-setSync sid sync sm = do
+setSync sync sid sm = do
     let sm' = modifySurface (\s -> s { surfSync = sync }) sid sm
     inSync <- inSyncMode sid sm'
     st     <- surfState <$> lookupSurface sid sm'

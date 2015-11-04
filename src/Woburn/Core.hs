@@ -224,9 +224,9 @@ handleCoreRequest cid req =
              modifySurfaces $ SM.insert sid surf
          SurfaceDestroy     sid      -> checkError BadSurface . modifySurfacesFail $ SM.delete sid
          SurfaceAttach      sid tid  -> checkError BadSurface . modifySurfacesFail $ SM.attach sid tid
-         SurfaceCommit      sid ss   -> checkError BadSurface . modifyAndCommitSurfaces $ SM.setState sid ss
+         SurfaceCommit      sid ss   -> checkError BadSurface . modifyAndCommitSurfaces $ SM.setState ss sid
          SurfaceSetPosition sid pos  -> modifySurface (setPosition pos) sid
-         SurfaceSetSync     sid sync -> checkError BadSurface . modifyAndCommitSurfaces $ SM.setSync sid sync
+         SurfaceSetSync     sid sync -> checkError BadSurface . modifyAndCommitSurfaces $ SM.setSync sync sid
          SurfacePlaceAbove  sid tid  -> checkError BadSurface . modifySurfacesFail $ SM.addShuffle PlaceAbove sid tid
          SurfacePlaceBelow  sid tid  -> checkError BadSurface . modifySurfacesFail $ SM.addShuffle PlaceBelow sid tid
     where

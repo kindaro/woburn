@@ -5,6 +5,7 @@ module Test.SurfaceMap
 where
 
 import Control.Arrow
+import Control.Monad
 import Data.Foldable
 import Data.Maybe
 import Data.List
@@ -142,6 +143,49 @@ prop_setState stree@(STree _ root _) =
         addSync sids surf
             | surfData surf `elem` sids = surf { surfSync = True }
             | otherwise                 = surf
+
+genShuffles :: Int -> [SurfaceId] -> Gen ([(ShuffleOperation, SurfaceId, SurfaceId)], [SurfaceId])
+genShuffles n ids
+    | n <= 0 = return ([], ids)
+    | otherwise = do
+        let l = length ids
+        a  <- choose (0, l - 1)
+        b  <- choose (0, l - 1) `suchThat` (/= a)
+        op <- elements $ [PlaceAbove | a > 0    ] ++
+                         [PlaceBelow | a < l - 1]
+
+        let splitPoint =
+                case op of
+                  PlaceAbove -> a
+                  PlaceBelow -> a + 1
+                  _          -> error "This shouldn't happen"
+            eA       = ids !! a
+            eB       = ids !! b
+            (as, bs) = splitAt splitPoint ids
+            ids'     = filter (/= eB) as ++ [eB] ++ filter (/= eB) bs
+
+        first ((op, eB, eA) :) <$> genShuffles (n - 1) ids'
+
+idsToSTree :: SurfaceId -> [SurfaceId] -> STree SurfaceId
+idsToSTree root ids =
+    let (ls, n:rs) = span (/= root) ids
+    in
+    STree (map singleton ls) n (map singleton rs)
+
+prop_shuffle :: Int -> Int -> Property
+prop_shuffle i j =
+    i > 1 ==>
+    let ids@(root:_) = take i [0..]
+        stree        = idsToSTree root ids
+    in
+    forAll (elements ids) $ \sid ->
+    forAll (genShuffles j ids) $ \(shs, expected) ->
+        (
+            surfaceMapFromSTrees [stree]
+            >>= flip (foldlM (\m (op, a, b) -> SM.addShuffle op a b m)) shs
+            >>= fmap snd . SM.setState dummyState root
+            >>= SM.lookupSTree sid
+        ) === Just (idsToSTree root expected)
 
 return []
 surfaceMapTests :: IO Bool

@@ -158,7 +158,7 @@ addShuffle op sid tid ss = do
     let sh = Shuffle op sid tid
     stree <- lookupSTree sid ss
     root  <- ST.findCommonRoot sid tid stree
-    return $ modifySurface (\s -> s { surfShuffle = sh : surfShuffle s }) root ss
+    return $ insertShuffle sh root ss
 
 -- | Checks if a surface is in sync mode.
 --

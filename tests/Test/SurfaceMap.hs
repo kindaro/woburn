@@ -144,27 +144,32 @@ prop_setState stree@(STree _ root _) =
             | surfData surf `elem` sids = surf { surfSync = True }
             | otherwise                 = surf
 
-genShuffles :: Int -> [SurfaceId] -> Gen ([(ShuffleOperation, SurfaceId, SurfaceId)], [SurfaceId])
-genShuffles n ids
-    | n <= 0 = return ([], ids)
+genShuffles :: SurfaceId -> Int -> [SurfaceId] -> Gen ([(ShuffleOperation, SurfaceId, SurfaceId)], [SurfaceId])
+genShuffles root n ids
+    | n <= 0 || l < 2 = return ([], ids)
     | otherwise = do
-        let l = length ids
         a  <- choose (0, l - 1)
         b  <- choose (0, l - 1) `suchThat` (/= a)
+        c  <- choose (0, l - 1) `suchThat` ((/= root) . (ids !!))
         op <- elements $ [PlaceAbove | a > 0    ] ++
-                         [PlaceBelow | a < l - 1]
+                          [PlaceBelow | a < l - 1] ++
+                          [DeletedAbove]
 
-        let splitPoint =
+        let (splitPoint, del) =
                 case op of
-                  PlaceAbove -> a
-                  PlaceBelow -> a + 1
-                  _          -> error "This shouldn't happen"
+                  PlaceAbove   -> (a, b)
+                  PlaceBelow   -> (a + 1, b)
+                  DeletedAbove -> (a, c)
+                  _            -> error "This shouldn't happen"
             eA       = ids !! a
-            eB       = ids !! b
+            eB       = ids !! del
             (as, bs) = splitAt splitPoint ids
-            ids'     = filter (/= eB) as ++ [eB] ++ filter (/= eB) bs
+            ids'     = filter (/= eB) as ++ [eB | op /= DeletedAbove] ++ filter (/= eB) bs
 
-        first ((op, eB, eA) :) <$> genShuffles (n - 1) ids'
+        first ((op, eB, eA) :) <$> genShuffles root (n - 1) ids'
+    where
+        l = length ids
+
 
 idsToSTree :: SurfaceId -> [SurfaceId] -> STree SurfaceId
 idsToSTree root ids =
@@ -178,14 +183,61 @@ prop_shuffle i j =
     let ids@(root:_) = take i [0..]
         stree        = idsToSTree root ids
     in
-    forAll (elements ids) $ \sid ->
-    forAll (genShuffles j ids) $ \(shs, expected) ->
+    forAll (genShuffles root j ids) $ \(shs, expected) ->
+    forAll (elements expected) $ \sid ->
         (
             surfaceMapFromSTrees [stree]
-            >>= flip (foldlM (\m (op, a, b) -> SM.addShuffle op a b m)) shs
+            >>= flip (foldlM applyOp) shs
             >>= fmap snd . SM.setState dummyState root
             >>= SM.lookupSTree sid
         ) === Just (idsToSTree root expected)
+    where
+        applyOp m (op, a, b) =
+            case op of
+              DeletedAbove -> SM.delete a m
+              _            -> SM.addShuffle op a b m
+
+prop_setSync :: STree SurfaceId -> Property
+prop_setSync stree@(STree _ root _) =
+    monadic (fromMaybe $ property False) $ do
+        let ids = toList stree
+
+        idsWithState <- pick $ sublistOf ids
+        (ss, sm)     <- run  $
+            surfaceMapFromSTrees [stree]
+            >>= flip (foldlM (\(s, m) sid -> first (++ s) <$> SM.setSync True sid m)) ids . (,) []
+
+        (surfs, sm') <- run  $
+            foldlM (\m sid -> snd <$> SM.setState dummyState sid m) sm idsWithState
+            >>= SM.setSync False root
+
+        sid      <- pick $ elements ids
+        surfTree <- run  $ SM.lookupSurfaces sid sm'
+
+        let (expectedSurfs, expectedSurfTree) = expected 0 idsWithState stree
+
+        stop
+            $    ss         === []
+            .&&. sort surfs === sort expectedSurfs
+            .&&. surfTree   === expectedSurfTree
+    where
+        expected :: Int -> [SurfaceId] -> STree SurfaceId -> ([Surface SurfaceId], STree (Surface SurfaceId))
+        expected n idsWithState tree@(STree ls sid rs)
+            | n == 1 && root `notElem` idsWithState =
+                ([], fmap (createSurf True idsWithState) tree)
+            | otherwise =
+                let (lss', ls') = first concat . unzip $ map (expected (n + 1) idsWithState) ls
+                    (rss', rs') = first concat . unzip $ map (expected (n + 1) idsWithState) rs
+                    s           = createSurf (sid /= root) idsWithState sid
+                in
+                if isNothing (surfState s)
+                  then (     lss' ++ rss' , STree ls' s rs')
+                  else (s : (lss' ++ rss'), STree ls' (committed s) rs')
+
+        createSurf sync idsWithState sid =
+            (create sid) { surfSync  = sync
+                         , surfState = mfilter (const (sid `elem` idsWithState)) (Just dummyState)
+                         }
 
 return []
 surfaceMapTests :: IO Bool

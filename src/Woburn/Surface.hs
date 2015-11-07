@@ -64,6 +64,9 @@ data Surface s =
             }
     deriving (Eq)
 
+instance Ord a => Ord (Surface a) where
+    compare a b = compare (surfData a) (surfData b)
+
 instance Show a => Show (Surface a) where
     show s =
         "Surface { surfSync     = " ++ show (surfSync s) ++ "\n" ++

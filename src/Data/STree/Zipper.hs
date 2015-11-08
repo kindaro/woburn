@@ -97,9 +97,9 @@ a <++> b = reverse a ++ b
 
 -- | Moves to the parent node if one exists, otherwise it returns 'Nothing'.
 up :: Zipper a -> Maybe (Zipper a)
-up (Zipper _ []                                ) = Nothing
-up (Zipper n (Branch Left  before after x rs : bs)) = Just $ Zipper (STree (before <++> n : after) x rs) bs
-up (Zipper n (Branch Right before after x ls : bs)) = Just $ Zipper (STree ls x  (before <++> n : after)) bs
+up (Zipper _ []                                   ) = Nothing
+up (Zipper n (Branch Left  before after x rs : bs)) = Just $ Zipper (STree (before <++> n : after) x rs                     ) bs
+up (Zipper n (Branch Right before after x ls : bs)) = Just $ Zipper (STree (reverse ls           ) x (before <++> n : after)) bs
 
 -- | Returns a zipper for the left-most child.
 down :: Zipper a -> Maybe (Zipper a)
@@ -114,20 +114,20 @@ left :: Zipper a -> Maybe (Zipper a)
 left (Zipper _ []    ) = Nothing
 left (Zipper n (b:bs)) =
     case b of
-         Branch Right []     sr x (l:ls) -> Just $ Zipper l (Branch Left  (reverse ls) []     x (n:sr) : bs)
-         Branch Right (l:sl) sr x ls     -> Just $ Zipper l (Branch Right sl           (n:sr) x ls     : bs)
-         Branch Left  (l:sl) sr x rs     -> Just $ Zipper l (Branch Left  sl           (n:sr) x rs     : bs)
-         _                            -> Nothing
+         Branch Right []     sr x (l:ls) -> Just $ Zipper l (Branch Left  ls []     x (n:sr) : bs)
+         Branch Right (l:sl) sr x ls     -> Just $ Zipper l (Branch Right sl (n:sr) x ls     : bs)
+         Branch Left  (l:sl) sr x rs     -> Just $ Zipper l (Branch Left  sl (n:sr) x rs     : bs)
+         _                               -> Nothing
 
 -- | Go to the right sibling if one exists.
 right :: Zipper a -> Maybe (Zipper a)
 right (Zipper _ []    ) = Nothing
 right (Zipper n (b:bs)) =
     case b of
-         Branch Left  sl []     x (r:rs) -> Just $ Zipper r (Branch Right []     rs x (reverse (n:sl)): bs)
-         Branch Left  sl (r:sr) x rs     -> Just $ Zipper r (Branch Left  (n:sl) sr x rs              : bs)
-         Branch Right sl (r:sr) x ls     -> Just $ Zipper r (Branch Right (n:sl) sr x ls              : bs)
-         _                            -> Nothing
+         Branch Left  sl []     x (r:rs) -> Just $ Zipper r (Branch Right []     rs x (n:sl): bs)
+         Branch Left  sl (r:sr) x rs     -> Just $ Zipper r (Branch Left  (n:sl) sr x rs    : bs)
+         Branch Right sl (r:sr) x ls     -> Just $ Zipper r (Branch Right (n:sl) sr x ls    : bs)
+         _                               -> Nothing
 
 -- | Returns the number of ancestors this node has.
 depth :: Zipper a -> Int
@@ -205,8 +205,8 @@ delete :: Zipper a -> Maybe (Zipper a, STree a)
 delete (Zipper _ []    ) = Nothing
 delete (Zipper n (b:bs)) =
     Just . (, n) $ case b of
-                Branch Left  ll lr x r -> Zipper (STree (ll <++> lr) x r) bs
-                Branch Right rl rr x l -> Zipper (STree l x (rl <++> rr)) bs
+                Branch Left  ll lr x r -> Zipper (STree (ll <++> lr) x r           ) bs
+                Branch Right rl rr x l -> Zipper (STree (reverse l ) x (rl <++> rr)) bs
 
 -- | Inserts a tree as the left-most child of the focused tree.
 insert :: STree a -> Zipper a -> Zipper a

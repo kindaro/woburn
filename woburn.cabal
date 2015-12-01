@@ -25,7 +25,7 @@ executable woburn
                        Woburn.Output
                        Woburn.Protocol
                        Woburn.Surface
-  -- other-extensions:    
+  other-extensions:    TemplateHaskell
   build-depends:       base >=4.7 && <4.9,
                        wayland-wire,
                        linear >= 1.9 && < 2.0,
@@ -42,14 +42,17 @@ executable woburn
                        dlist
   hs-source-dirs:      src
   default-language:    Haskell2010
-  ghc-options:         -Wall
+  ghc-options:         -Wall -threaded -rtsopts
+  ghc-prof-options:    -fprof-auto
 
 test-suite test
   type:                exitcode-stdio-1.0
   default-language:    Haskell2010
   main-is:             Test.hs
   hs-source-dirs:      tests src
-  ghc-options:         -Wall
+  other-extensions:    TemplateHaskell
+  ghc-options:         -Wall -threaded -rtsopts
+  ghc-prof-options:    -fprof-auto
   build-depends:       base >=4.7 && <4.9,
                        wayland-wire,
                        linear >= 1.9 && < 2.0,

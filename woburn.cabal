@@ -39,7 +39,8 @@ executable woburn
                        lens,
                        stm,
                        stm-chans,
-                       dlist
+                       dlist,
+                       gtk >= 0.13
   hs-source-dirs:      src
   default-language:    Haskell2010
   ghc-options:         -Wall -threaded -rtsopts
@@ -67,4 +68,5 @@ test-suite test
                        stm,
                        stm-chans,
                        dlist,
+                       gtk >= 0.13,
                        QuickCheck

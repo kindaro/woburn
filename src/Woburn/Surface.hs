@@ -19,10 +19,8 @@ import Data.Int
 import Data.Region
 import Data.Word
 import Linear
+import Woburn.Buffer
 import Woburn.Protocol
-
-data Buffer = Buffer
-    deriving (Eq, Show)
 
 data Buffered a = Buffered { currentState :: !a, pendingState :: !a }
     deriving (Eq, Show)

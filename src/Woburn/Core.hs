@@ -17,7 +17,9 @@ import Control.Concurrent.Async
 import Control.Concurrent.MChan.Split
 import Control.Monad.Reader
 import Control.Monad.State
+import Control.Monad.Zip
 import Control.Lens hiding (universe)
+import Data.Foldable
 import Data.Maybe
 import Data.Int
 import Data.Rect
@@ -165,18 +167,39 @@ backendCommit ss = do
       Nothing -> error "Could not map ClientWindowId to surface tree"
       Just l' -> sendBackendRequest $ B.SurfaceCommit ss l'
     where
+        -- Maps a list of 'Rect's along with the 'ClientWindowId' to a list of
+        -- 'Rect's with trees of the surface data and the surface's window
+        -- offset.
         mapWindowsToSurfaces :: M.Map ClientId (ClientData s)
                              -> [(Rect Word32, ClientWindowId)]
-                             -> Maybe [(Rect Word32, STree (V2 Int32, s))]
+                             -> Maybe [(Rect Word32, STree (V2 Word32, s))]
         mapWindowsToSurfaces cs = traverse (runKleisli . second . Kleisli $ mapWindowToSurfaces cs)
 
+        -- Maps a window to a tree of the surface data with the surface offset
+        -- within the window.
         mapWindowToSurfaces :: M.Map ClientId (ClientData s)
                             -> ClientWindowId
-                            -> Maybe (STree (V2 Int32, s))
+                            -> Maybe (STree (V2 Word32, s))
         mapWindowToSurfaces cs (ClientWindowId cid wid) = do
             cd  <- M.lookup cid cs
             win <- M.lookup wid (windows cd)
-            fmap (getPosition &&& surfData) <$> SM.lookupSurfaces (winSurface win) (surfaces cd)
+            normalizeOffets . fmap (getPosition &&& surfData) <$> SM.lookupSurfaces (winSurface win) (surfaces cd)
+
+        -- Normalizes the surface offsets, first making them global, then
+        -- offseting them by the smallest offset to make them all positive.
+        normalizeOffets :: STree (V2 Int32, s) -> STree (V2 Word32, s)
+        normalizeOffets s = first (fmap fromIntegral . (+ minOffset s)) <$> toGlobalOffsets 0 s
+
+        -- Finds the smallest value used for the x- and y- axis separately.
+        minOffset :: STree (V2 Int32, s) -> V2 Int32
+        minOffset = foldl' (mzipWith min) 0 . fmap fst
+
+        -- Converts the offsets from relative to their parents to relative to
+        -- the root surface.
+        toGlobalOffsets :: V2 Int32 -> STree (V2 Int32, s) -> STree (V2 Int32, s)
+        toGlobalOffsets off (STree ls (n, s) rs) =
+            let n' = n + off
+            in  STree (map (toGlobalOffsets n') ls) (n', s) (map (toGlobalOffsets n') rs)
 
 -- | Sets the universe, and recomputes the layout.
 setUniverse :: Core s (U.Universe ClientWindowId) -> Core s ()

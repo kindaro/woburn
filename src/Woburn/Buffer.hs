@@ -1,11 +1,13 @@
 module Woburn.Buffer
     ( Buffer (..)
     , touchBuffer
+    , withBuffer
     )
 where
 
 import Data.Word
 import Foreign.ForeignPtr
+import Foreign.Ptr
 import Woburn.Protocol
 
 data Buffer =
@@ -20,3 +22,6 @@ data Buffer =
 -- | Ensure that the 'ForeignPtr' pointing to the buffer data is alive before this call.
 touchBuffer :: Buffer -> IO ()
 touchBuffer = touchForeignPtr . bufData
+
+withBuffer :: Buffer -> (Ptr a -> IO b) -> IO b
+withBuffer buf f = withForeignPtr (bufData buf) (f . castPtr)

@@ -8,22 +8,27 @@ import Control.Concurrent.MChan.Split
 import Control.Exception
 import Control.Monad.IO.Class
 import Data.IORef
+import Data.Int
 import Data.Word
 import GHC.Conc
 import Graphics.UI.Gtk
+import Linear
 import Woburn.Buffer
 import Woburn.Output
 import Woburn.Protocol
+import Woburn.Surface
 import qualified Woburn.Backend as B
 
 import Text.Printf
 
 data GtkBuffer =
-    GtkBuffer { pixbuf :: Pixbuf
-              , buffer :: Buffer
+    GtkBuffer { buffer :: Buffer
+              , offset :: V2 Int32
+              , scale  :: Int
+              , pixbuf :: Pixbuf
               }
 
-newtype GtkSurface = GtkSurface (IORef GtkBuffer)
+newtype GtkSurface = GtkSurface { unGtkSurface :: IORef (Maybe GtkBuffer) }
 
 mkOut :: Word32 -> Word32 -> Output
 mkOut w h =
@@ -42,6 +47,29 @@ mkOut w h =
         -- Dots per millimeter
         dpmm = 10
 
+createSurface :: IO GtkSurface
+createSurface = GtkSurface <$> newIORef Nothing
+
+pixbufFromBuffer :: Buffer -> IO Pixbuf
+pixbufFromBuffer buf = withBuffer buf $ \ptr ->
+    pixbufNewFromData
+        ptr ColorspaceRgb True 8
+        (fromIntegral $ bufWidth buf)
+        (fromIntegral $ bufHeight buf)
+        (fromIntegral $ bufStride buf)
+
+gtkBufferFromState :: SurfaceState -> IO (Maybe GtkBuffer)
+gtkBufferFromState s =
+    case surfBuffer s of
+      Nothing -> return Nothing
+      Just b  -> Just . GtkBuffer b (surfBufferOffset s) (surfBufferScale s) <$> pixbufFromBuffer b
+
+commitSurface :: Surface GtkSurface -> IO ()
+commitSurface surf =
+    case surfState surf of
+      Nothing -> return ()
+      Just s  -> writeIORef (unGtkSurface $ surfData surf) =<< gtkBufferFromState s
+
 gtkBackend :: IO (WMChan (B.Request GtkSurface), RMChan B.Event, IO GtkSurface)
 gtkBackend = do
     (evtRd, evtWr) <- newMChan
@@ -58,13 +86,13 @@ gtkBackend = do
         liftIO . writeMChan evtWr . B.OutputAdded $ mkOut (fromIntegral w) (fromIntegral h)
         return True
 
-    _ <- forkIO $ reqHandler (0 :: Int) reqRd
+    _ <- forkIO $ readUntilClosed reqRd reqHandler
 
     postGUISync $ widgetShowAll win
-    return (reqWr, evtRd, undefined)
+    return (reqWr, evtRd, createSurface)
     where
-        reqHandler n chan = do
-            evt <- readMChan chan
-            printf "req #%i came in\n" n
-            reqHandler (n + 1) chan
-
+        reqHandler req =
+            case req of
+              B.OutputSetMode _ _               -> error "Gtk surfaces should have only one mode"
+              B.SurfaceCommit surfaces layedOut ->
+                  mapM_ commitSurface surfaces

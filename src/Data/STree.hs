@@ -19,7 +19,7 @@ instance Functor STree where
     fmap f (STree l n r) = STree (fmap (fmap f) l) (f n) (fmap (fmap f) r)
 
 instance Foldable STree where
-    foldMap f (STree l n r) = mconcat $ map (foldMap f) l ++ [f n] ++ map (foldMap f) r
+    foldMap f (STree l n r) = foldMap (foldMap f) l <> f n <> foldMap (foldMap f) r
 
 instance Traversable STree where
     traverse f (STree l n r) =

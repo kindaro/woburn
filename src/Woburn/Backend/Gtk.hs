@@ -9,9 +9,12 @@ import Control.Exception
 import Control.Monad.IO.Class
 import Data.IORef
 import Data.Int
+import Data.Rect
+import Data.STree
 import Data.Word
 import GHC.Conc
 import Graphics.UI.Gtk
+import Graphics.UI.Gtk.Gdk.GC
 import Linear
 import Woburn.Buffer
 import Woburn.Output
@@ -30,22 +33,23 @@ data GtkBuffer =
 
 newtype GtkSurface = GtkSurface { unGtkSurface :: IORef (Maybe GtkBuffer) }
 
-mkOut :: Word32 -> Word32 -> Output
+mkOut :: Float -> Float -> Output
 mkOut w h =
     Output { outputId          = 0
            , outputMake        = "Gtk window"
            , outputModel       = "Gtk window"
-           , outputCurMode     = Mode { modeWidth = w, modeHeight = h, modeRefresh = 60000, modePreferred = True }
+           , outputCurMode     = Mode { modeWidth = round w, modeHeight = round h, modeRefresh = 60000, modePreferred = True }
            , outputModes       = []
-           , outputPhysWidth   = w * dpmm
-           , outputPhysHeight  = h * dpmm
+           , outputPhysWidth   = round $ w / dotsPerMm
+           , outputPhysHeight  = round $ h / dotsPerMm
            , outputSubpixel    = WlOutputSubpixelUnknown
            , outputTransform   = WlOutputTransformNormal
            , outputScale       = 1
            }
     where
-        -- Dots per millimeter
-        dpmm = 10
+        dotsPerInch = 96
+        dotsPerMm = dotsPerInch * mmPerInch
+        mmPerInch = 25.4
 
 createSurface :: IO GtkSurface
 createSurface = GtkSurface <$> newIORef Nothing
@@ -70,6 +74,51 @@ commitSurface surf =
       Nothing -> return ()
       Just s  -> writeIORef (unGtkSurface $ surfData surf) =<< gtkBufferFromState s
 
+drawSurface :: DrawWindow -> GC -> (V2 Word32, GtkSurface) -> IO ()
+drawSurface _ _ _ = return ()
+
+drawWindow :: DrawWindow -> GC -> Rect Word32 -> STree (V2 Word32, GtkSurface) -> IO ()
+drawWindow dw gc scissorRect surfaces  = do
+    let r@(Rect (V2 x1 y1) _) = fmap fromIntegral scissorRect
+    gcSetClipRectangle gc (Rectangle x1 y1 (width r) (height r))
+    traverseR_ (drawSurface dw gc) surfaces
+    where
+        -- traverse_ that works right to left.
+        traverseR_ :: (Foldable t, Applicative f) => (a -> f ()) -> t a -> f ()
+        traverseR_ f = foldl (\b a -> f a *> b) (pure ())
+
+draw :: Window -> [(Rect Word32, STree (V2 Word32, GtkSurface))] -> IO ()
+draw win windows = do
+    dw <- widgetGetDrawWindow win
+    w  <- drawWindowGetWidth dw
+    h  <- drawWindowGetHeight dw
+    gc <- gcNewWithValues dw defaultGCValues
+
+    drawWindowBeginPaintRect dw (Rectangle 0 0 w h)
+    drawRectangle dw gc True 0 0 w h
+    mapM_ (uncurry $ drawWindow dw gc) windows
+    drawWindowEndPaint dw
+    where
+        defaultGCValues =
+            GCValues { foreground       = Color 0 0 0
+                     , background       = Color 0 0 0
+                     , function         = Copy
+                     , fill             = Solid
+                     , tile             = Nothing
+                     , stipple          = Nothing
+                     , clipMask         = Nothing
+                     , subwindowMode    = ClipByChildren
+                     , tsXOrigin        = 0
+                     , tsYOrigin        = 0
+                     , clipXOrigin      = 0
+                     , clipYOrigin      = 0
+                     , graphicsExposure = False
+                     , lineWidth        = 1
+                     , lineStyle        = LineSolid
+                     , capStyle         = CapButt
+                     , joinStyle        = JoinRound
+                     }
+
 gtkBackend :: IO (WMChan (B.Request GtkSurface), RMChan B.Event, IO GtkSurface)
 gtkBackend = do
     (evtRd, evtWr) <- newMChan
@@ -86,13 +135,14 @@ gtkBackend = do
         liftIO . writeMChan evtWr . B.OutputAdded $ mkOut (fromIntegral w) (fromIntegral h)
         return True
 
-    _ <- forkIO $ readUntilClosed reqRd reqHandler
+    _ <- forkIO $ readUntilClosed reqRd (reqHandler win)
 
     postGUISync $ widgetShowAll win
     return (reqWr, evtRd, createSurface)
     where
-        reqHandler req =
+        reqHandler win req =
             case req of
               B.OutputSetMode _ _               -> error "Gtk surfaces should have only one mode"
-              B.SurfaceCommit surfaces layedOut ->
-                  mapM_ commitSurface surfaces
+              B.SurfaceCommit surfaces layedOut -> postGUISync $ do
+                      mapM_ commitSurface surfaces
+                      maybe (return ()) (draw win) (lookup 0 layedOut)

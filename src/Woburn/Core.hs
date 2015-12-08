@@ -2,8 +2,8 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE TupleSections #-}
 module Woburn.Core
-    ( Request
-    , Event
+    ( Request (..)
+    , Event (..)
     , Error
     , ClientId
     , run
@@ -48,7 +48,6 @@ data ClientWindowId = ClientWindowId ClientId WindowId
 data CoreState s =
     CoreState { outputs  :: [MappedOutput]
               , clients  :: M.Map ClientId (ClientData s)
-              , ids      :: D.Diet Word32
               , universe :: U.Universe ClientWindowId
               , layedOut :: [(MappedOutput, [(Rect Word32, ClientWindowId)])]
               }
@@ -70,7 +69,7 @@ runCore :: CoreData s -> CoreState s -> Core s a -> IO a
 runCore cd cs c = evalStateT (runReaderT c cd) cs
 
 newtype ClientId = ClientId Word32
-    deriving (Eq, Ord, Show, Num, Real, Integral, Enum)
+    deriving (Eq, Ord, Show, Num, Real, Integral, Enum, Bounded)
 
 data Request =
     WindowCreate WindowId SurfaceId
@@ -335,7 +334,7 @@ msgGenerator :: RMChan (WMChan Event, RMChan Request) -- ^ New client.
              -> IO (RMChan Message)                   -- ^ Combined backend and client data.
 msgGenerator newClients bEvt = do
     (msgRChan, msgWChan) <- newMChan
-    dVar                 <- newMVar D.empty
+    dVar                 <- newMVar . D.singletonI $ D.Interval minBound maxBound
 
     -- Pass on events from the backend.
     linkAsync . readUntilClosed bEvt $ writeMChan msgWChan . BackendEvent
@@ -370,7 +369,6 @@ run bReq bEvt bSurfGet newClients = do
                       }
         cs = CoreState { outputs  = []
                        , clients  = M.empty
-                       , ids      = D.empty
                        , universe = U.create ["workspace"]
                        , layedOut = []
                        }

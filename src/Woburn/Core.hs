@@ -160,42 +160,56 @@ deleteOutput oid os =
 
 backendCommit :: [Surface s] -> Core s ()
 backendCommit ss = do
-    l  <- map (first $ outputId . mappedOutput) <$> gets layedOut
+    l  <- gets layedOut
     cs <- gets clients
 
-    case traverse (runKleisli . second . Kleisli $ mapWindowsToSurfaces cs) l of
+    case mapLayoutToSurfaces cs l of
       Nothing -> error "Could not map ClientWindowId to surface tree"
       Just l' -> sendBackendRequest $ B.SurfaceCommit ss l'
     where
+        -- | Maps all the 'ClientWindowId' in the layout to the containing
+        -- rectangle along with the surface tree, and maps the 'MappedOutput'
+        -- to their respective 'OutputId'.
+        mapLayoutToSurfaces :: M.Map ClientId (ClientData s)
+                            -> [(MappedOutput, [(Rect Word32, ClientWindowId)])]
+                            -> Maybe [(OutputId, [(Rect Word32, STree (V2 Int32, s))])]
+        mapLayoutToSurfaces cs =
+            traverse . runKleisli $
+                arr (outputId . mappedOutput . fst)
+                &&& Kleisli (mapWindowsToSurfaces cs . first (topLeft . mappedRect))
+
         -- Maps a list of 'Rect's along with the 'ClientWindowId' to a list of
         -- 'Rect's with trees of the surface data and the surface's window
         -- offset.
         mapWindowsToSurfaces :: M.Map ClientId (ClientData s)
-                             -> [(Rect Word32, ClientWindowId)]
-                             -> Maybe [(Rect Word32, STree (V2 Word32, s))]
-        mapWindowsToSurfaces cs = traverse (runKleisli . second . Kleisli $ mapWindowToSurfaces cs)
+                             -> (V2 Word32, [(Rect Word32, ClientWindowId)])
+                             -> Maybe [(Rect Word32, STree (V2 Int32, s))]
+        mapWindowsToSurfaces cs (off, ws) =
+            traverse (runKleisli . second . Kleisli $ mapWindowToSurfaces cs off) ws
 
         -- Maps a window to a tree of the surface data with the surface offset
         -- within the window.
         mapWindowToSurfaces :: M.Map ClientId (ClientData s)
+                            -> V2 Word32
                             -> ClientWindowId
-                            -> Maybe (STree (V2 Word32, s))
-        mapWindowToSurfaces cs (ClientWindowId cid wid) = do
+                            -> Maybe (STree (V2 Int32, s))
+        mapWindowToSurfaces cs off (ClientWindowId cid wid) = do
             cd  <- M.lookup cid cs
             win <- M.lookup wid (windows cd)
-            normalizeOffets . fmap (getPosition &&& surfData) <$> SM.lookupSurfaces (winSurface win) (surfaces cd)
+            normalizeOffets off . fmap (getPosition &&& surfData) <$> SM.lookupSurfaces (winSurface win) (surfaces cd)
 
         -- Normalizes the surface offsets, first making them global, then
-        -- offseting them by the smallest offset to make them all positive.
-        normalizeOffets :: STree (V2 Int32, s) -> STree (V2 Word32, s)
-        normalizeOffets s = first (fmap fromIntegral . (+ minOffset s)) <$> toGlobalOffsets 0 s
+        -- offseting them by the smallest offset to put all the surfaces within
+        -- the window.
+        normalizeOffets :: V2 Word32 -> STree (V2 Int32, s) -> STree (V2 Int32, s)
+        normalizeOffets off s = toGlobalOffsets (fmap fromIntegral off + minOffset s) s
 
         -- Finds the smallest value used for the x- and y- axis separately.
         minOffset :: STree (V2 Int32, s) -> V2 Int32
         minOffset = foldl' (mzipWith min) 0 . fmap fst
 
         -- Converts the offsets from relative to their parents to relative to
-        -- the root surface.
+        -- the output.
         toGlobalOffsets :: V2 Int32 -> STree (V2 Int32, s) -> STree (V2 Int32, s)
         toGlobalOffsets off (STree ls (n, s) rs) =
             let n' = n + off

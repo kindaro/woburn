@@ -74,10 +74,10 @@ commitSurface surf =
       Nothing -> return ()
       Just s  -> writeIORef (unGtkSurface $ surfData surf) =<< gtkBufferFromState s
 
-drawSurface :: DrawWindow -> GC -> (V2 Word32, GtkSurface) -> IO ()
+drawSurface :: DrawWindow -> GC -> (V2 Int32, GtkSurface) -> IO ()
 drawSurface _ _ _ = return ()
 
-drawWindow :: DrawWindow -> GC -> Rect Word32 -> STree (V2 Word32, GtkSurface) -> IO ()
+drawWindow :: DrawWindow -> GC -> Rect Word32 -> STree (V2 Int32, GtkSurface) -> IO ()
 drawWindow dw gc scissorRect surfaces  = do
     let r@(Rect (V2 x1 y1) _) = fmap fromIntegral scissorRect
     gcSetClipRectangle gc (Rectangle x1 y1 (width r) (height r))
@@ -87,7 +87,7 @@ drawWindow dw gc scissorRect surfaces  = do
         traverseR_ :: (Foldable t, Applicative f) => (a -> f ()) -> t a -> f ()
         traverseR_ f = foldl (\b a -> f a *> b) (pure ())
 
-draw :: Window -> [(Rect Word32, STree (V2 Word32, GtkSurface))] -> IO ()
+draw :: Window -> [(Rect Word32, STree (V2 Int32, GtkSurface))] -> IO ()
 draw win windows = do
     dw <- widgetGetDrawWindow win
     w  <- drawWindowGetWidth dw

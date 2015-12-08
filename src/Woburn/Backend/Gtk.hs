@@ -75,7 +75,14 @@ commitSurface surf =
       Just s  -> writeIORef (unGtkSurface $ surfData surf) =<< gtkBufferFromState s
 
 drawSurface :: DrawWindow -> GC -> (V2 Int32, GtkSurface) -> IO ()
-drawSurface _ _ _ = return ()
+drawSurface dw gc (off, surf) = do
+    mBuf <- readIORef $ unGtkSurface surf
+    case mBuf of
+      Nothing  -> return ()
+      Just buf -> do
+          let V2 x y = fmap fromIntegral (off + offset buf)
+          drawPixbuf dw gc (pixbuf buf) 0 0 x y (-1) (-1) RgbDitherNone 0 0
+          touchBuffer (buffer buf)
 
 drawWindow :: DrawWindow -> GC -> Rect Word32 -> STree (V2 Int32, GtkSurface) -> IO ()
 drawWindow dw gc scissorRect surfaces  = do

@@ -27,6 +27,7 @@ import Data.STree
 import Data.Tuple
 import Data.Traversable (mapAccumR)
 import qualified Data.Map as M
+import qualified Data.Set as S
 import qualified Data.Set.Diet as D
 import Data.Word
 import Linear
@@ -89,6 +90,7 @@ data Request =
 data Event =
     OutputAdded MappedOutput
   | OutputRemoved MappedOutput
+  | WindowConfigure WindowId (V2 Word32)
   | Error Error
   deriving (Eq, Show)
 
@@ -214,12 +216,35 @@ backendCommit ss = do
             let n' = n + off
             in  STree (map (toGlobalOffsets n') ls) (n', s) (map (toGlobalOffsets n') rs)
 
+-- | Finds the windows that have changed between two layouts.
+layoutDiff :: [(MappedOutput, [(Rect Word32, ClientWindowId)])] -- ^ The new layout.
+           -> [(MappedOutput, [(Rect Word32, ClientWindowId)])] -- ^ The old layout.
+           -> [(V2 Word32, ClientWindowId)]                     -- ^ The windows that has changed.
+layoutDiff new' old' = filter (`S.notMember` S.fromList old) new
+    where
+        new = concatMap (map (first size) . snd) new'
+        old = concatMap (map (first size) . snd) old'
+
+-- | Sends a configure event for a single window.
+configureWindow :: V2 Word32        -- ^ The window size.
+                -> ClientWindowId   -- ^ The window ID.
+                -> Core s ()
+configureWindow sz (ClientWindowId cid wid) =
+    sendClientEvent (Just cid) (WindowConfigure wid sz)
+
 -- | Sets the universe, and recomputes the layout.
 setUniverse :: Core s (U.Universe ClientWindowId) -> Core s ()
 setUniverse f = do
-    u <- f
-    modify $ \s -> s { universe = u, layedOut = layout u }
+    uni <- f
+    ws  <- state $ updateUniverse uni
+    mapM_ (uncurry configureWindow) ws
     backendCommit []
+    where
+        updateUniverse uni s =
+            let newLayout = layout uni
+                oldLayout = layedOut s
+            in
+            (layoutDiff newLayout oldLayout, s { universe = uni, layedOut = newLayout })
 
 modifyUniverse :: (U.Universe ClientWindowId -> U.Universe ClientWindowId) -> Core s ()
 modifyUniverse f = setUniverse (f <$> gets universe)

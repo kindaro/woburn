@@ -6,6 +6,7 @@ module Data.Rect
     , shiftY
     , width
     , height
+    , size
     )
 where
 
@@ -21,7 +22,7 @@ data Rect a =
     Rect { topLeft     :: V2 a
          , bottomRight :: V2 a
          }
-    deriving (Eq, Show)
+    deriving (Eq, Ord, Show)
 
 instance Functor Rect where
     fmap f (Rect start stop) = Rect (fmap f start) (fmap f stop)
@@ -33,6 +34,10 @@ width (Rect a b) = b ^. _x - a ^. _x + 1
 -- | Returns the height of a rectangle.
 height :: Num a => Rect a -> a
 height (Rect a b) = b ^. _y - a ^. _y + 1
+
+-- | Returns the size of a rectangle.
+size :: Num a => Rect a -> V2 a
+size r = V2 (width r) (height r)
 
 -- | Checks if a point is inside a rectangle.
 inside :: Ord a => V2 a -> Rect a -> Bool

@@ -1,7 +1,5 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-
 module Woburn.Frontend
-    ( runFrontend
+    ( run
     )
 where
 
@@ -15,28 +13,12 @@ import Graphics.Wayland
 import System.IO
 import qualified Woburn.Core as C
 import Woburn.Protocol
-import Woburn.Frontend.WB
-
-newtype SM a = SM { unSM :: ReaderT MessageLookup IO a }
-    deriving (Functor, Applicative, Monad, MonadReader MessageLookup, MonadIO)
-
-instance SocketError SM where
-    sockErr = liftIO . ioError
-
-instance SocketLookup SM where
-    msgLookup = ask
-
--- | Runs an 'SM' computation.
-runSM :: MessageLookup -> SM a -> IO a
-runSM lut = (`runReaderT` lut) . unSM
-
--- | The global display object.
-display :: Object Server WlDisplay
-display = Object 1
+import Woburn.Frontend.Display
+import Woburn.Frontend.Types
 
 -- | Handles an incoming message, sending a signal through the display object
 -- if there is a protocol error.
-handleMsg :: Message -> WB ()
+handleMsg :: Message -> Frontend ()
 handleMsg msg = do
     res <- (Nothing <$ dispatchMessage msg) `catchError` (return . Just)
     case res of
@@ -45,11 +27,11 @@ handleMsg msg = do
       Just (WErrObject obj    ) -> wlDisplayError (signals display) obj WlDisplayErrorInvalidObject "unknown object"
       Just err                  -> throwError err
 
-handleEvt :: C.Event -> WB ()
+handleEvt :: C.Event -> Frontend ()
 handleEvt = undefined
 
 -- | Runs a single client.
-runClient :: WB ()
+runClient :: Frontend ()
 runClient = do
     chan <- liftIO newChan
     sock <- ask
@@ -59,8 +41,7 @@ runClient = do
     liftIO $ link ea
 
     forever $ do
-        lut <- msgLookup
-        sa  <- liftIO . async . runSM lut $ recv sock >>= liftIO . writeChan chan . Left
+        sa <- asyncSM $ recv sock >>= liftIO . writeChan chan . Left
         liftIO $ link sa
 
         m <- liftIO $ readChan chan
@@ -80,15 +61,15 @@ waitForClients socket wChan = do
     clientSocket <- accept socket
     (rEvt, wEvt) <- newMChan
     (rReq, wReq) <- newMChan
-    _            <- forkIO . logError $ finally (runWB clientSocket rEvt wReq runClient) (close clientSocket)
+    _            <- forkIO . logError $ finally (runFrontend clientSocket rEvt wReq runClient) (close clientSocket)
 
     writeMChan wChan (wEvt, rReq)
     waitForClients socket wChan
 
 -- | Starts the frontend, and returns a channel that new clients will be written to.
-runFrontend :: Maybe String                                   -- ^ The path to listen for incoming connections on.
-            -> IO (RMChan (WMChan C.Event, RMChan C.Request)) -- ^ A channel where new clients will be announced.
-runFrontend path = do
+run :: Maybe String                                   -- ^ The path to listen for incoming connections on.
+    -> IO (RMChan (WMChan C.Event, RMChan C.Request)) -- ^ A channel where new clients will be announced.
+run path = do
     (rChan, wChan) <- newMChan
     bracket (listen path) (\sock -> async (waitForClients sock wChan) >>= link) close
     return rChan

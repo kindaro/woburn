@@ -1,20 +1,32 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 module Woburn.Core
     ( Request (..)
     , Event (..)
     , Error
     , ClientId
-    , run
+    , interpretCore
+
+    -- * Core input commands.
+    , clientAdd
+    , clientDel
+    , clientRequest
+    , backendEvent
+
+    -- * Core output.
+    , CoreOutputF (..)
     )
 where
 
 import Control.Applicative
 import Control.Arrow
-import Control.Concurrent
-import Control.Concurrent.Async
-import Control.Concurrent.MChan.Split
+import Control.Monad.Free
+import Control.Monad.Free.TH
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Zip
@@ -28,7 +40,6 @@ import Data.Tuple
 import Data.Traversable (mapAccumR)
 import qualified Data.Map as M
 import qualified Data.Set as S
-import qualified Data.Set.Diet as D
 import Data.Word
 import Linear
 
@@ -53,25 +64,15 @@ data CoreState s =
               , layedOut :: [(MappedOutput, [(Rect Word32, ClientWindowId)])]
               }
 
-data CoreData s =
-    CoreData { backendRequest :: WMChan (B.Request s)
-             , backendSurfGet :: IO s
-             }
-
 data ClientData s =
     ClientData { surfaces :: SM.SurfaceMap s
                , windows  :: M.Map WindowId Window
-               , output   :: WMChan Event
                }
-
-type Core s a = ReaderT (CoreData s) (StateT (CoreState s) IO) a
-
-runCore :: CoreData s -> CoreState s -> Core s a -> IO a
-runCore cd cs c = evalStateT (runReaderT c cd) cs
 
 newtype ClientId = ClientId Word32
     deriving (Eq, Ord, Show, Num, Real, Integral, Enum, Bounded)
 
+-- | A core request.
 data Request =
     WindowCreate WindowId SurfaceId
   | WindowDestroy WindowId
@@ -87,6 +88,7 @@ data Request =
   | SurfacePlaceBelow SurfaceId SurfaceId
   deriving (Eq, Show)
 
+-- | A core event.
 data Event =
     OutputAdded MappedOutput
   | OutputRemoved MappedOutput
@@ -94,16 +96,29 @@ data Event =
   | Error Error
   deriving (Eq, Show)
 
+-- | A core error.
 data Error =
     BadSurface
   | BadWindow
   deriving (Eq, Show)
 
-data Message =
-    ClientAdd ClientId (WMChan Event)
-  | ClientDel ClientId
-  | ClientRequest ClientId Request
-  | BackendEvent B.Event
+data CoreInputF s a =
+    ClientAdd ClientId a
+  | ClientDel ClientId a
+  | ClientRequest ClientId Request a
+  | BackendEvent B.Event a
+  deriving (Eq, Show, Functor)
+
+$(makeFree ''CoreInputF)
+
+data CoreOutputF s a =
+    ClientEvent (Maybe ClientId) Event a
+  | BackendRequest (B.Request s) a
+  | BackendSurfGet (s -> a)
+  | CoreError String a
+  deriving (Functor)
+
+$(makeFree ''CoreOutputF)
 
 -- | Returns the size of an 'Output'.
 outputSize :: Output -> V2 Word32
@@ -159,14 +174,14 @@ deleteOutput oid os =
          []     -> (Nothing, as)
          (x:xs) -> (Just x, mapOutputs (outputsRight xs) (map mappedOutput as) ++ xs)
 
-backendCommit :: [Surface s] -> Core s ()
+backendCommit :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m) => [Surface s] -> m ()
 backendCommit ss = do
     l  <- gets layedOut
     cs <- gets clients
 
     case mapLayoutToSurfaces cs l of
-      Nothing -> error "Could not map ClientWindowId to surface tree"
-      Just l' -> sendBackendRequest $ B.SurfaceCommit ss l'
+      Nothing -> coreError "Could not map ClientWindowId to surface tree"
+      Just l' -> backendRequest $ B.SurfaceCommit ss l'
     where
         -- | Maps all the 'ClientWindowId' in the layout to the containing
         -- rectangle along with the surface tree, and maps the 'MappedOutput'
@@ -225,15 +240,36 @@ layoutDiff new' old' = filter (`S.notMember` S.fromList old) new
         new = concatMap (map (first size) . snd) new'
         old = concatMap (map (first size) . snd) old'
 
+-- | Handles backend events.
+handleBackendEvent :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m) => B.Event -> m ()
+handleBackendEvent evt = do
+    case evt of
+         B.OutputAdded   out -> do
+             mOut <- state $ \s ->
+                 let outs = snd . deleteOutput (outputId out) $ outputs s
+                     mOut = mapOutput (outputsRight outs) out
+                 in
+                 (mOut, s { outputs = mOut : outs })
+             clientEvent Nothing (OutputAdded mOut)
+         B.OutputRemoved oid -> do
+             mOut <- state $ \s -> second (\x -> s { outputs = x}) . deleteOutput oid $ outputs s
+             case mOut of
+                  Nothing  -> coreError "Backend removed a non-existing output"
+                  Just out -> clientEvent Nothing (OutputRemoved out)
+    setUniverse $ U.setOutputs <$> gets outputs <*> gets universe
+
 -- | Sends a configure event for a single window.
-configureWindow :: V2 Word32        -- ^ The window size.
+configureWindow :: MonadFree (CoreOutputF s) m
+                => V2 Word32        -- ^ The window size.
                 -> ClientWindowId   -- ^ The window ID.
-                -> Core s ()
+                -> m ()
 configureWindow sz (ClientWindowId cid wid) =
-    sendClientEvent (Just cid) (WindowConfigure wid sz)
+    clientEvent (Just cid) (WindowConfigure wid sz)
 
 -- | Sets the universe, and recomputes the layout.
-setUniverse :: Core s (U.Universe ClientWindowId) -> Core s ()
+setUniverse :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m)
+            => m (U.Universe ClientWindowId)
+            -> m ()
 setUniverse f = do
     uni <- f
     ws  <- state $ updateUniverse uni
@@ -246,28 +282,11 @@ setUniverse f = do
             in
             (layoutDiff newLayout oldLayout, s { universe = uni, layedOut = newLayout })
 
-modifyUniverse :: (U.Universe ClientWindowId -> U.Universe ClientWindowId) -> Core s ()
+modifyUniverse :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m)
+               => (U.Universe ClientWindowId -> U.Universe ClientWindowId) -> m ()
 modifyUniverse f = setUniverse (f <$> gets universe)
 
--- | Handles backend events.
-handleBackendEvent :: B.Event -> Core s ()
-handleBackendEvent evt = do
-    case evt of
-         B.OutputAdded   out -> do
-             mOut <- state $ \s ->
-                 let outs = snd . deleteOutput (outputId out) $ outputs s
-                     mOut = mapOutput (outputsRight outs) out
-                 in
-                 (mOut, s { outputs = mOut : outs })
-             sendClientEvent Nothing (OutputAdded mOut)
-         B.OutputRemoved oid -> do
-             mOut <- state $ \s -> second (\x -> s { outputs = x}) . deleteOutput oid $ outputs s
-             case mOut of
-                  Nothing  -> error "Backend removed a non-existing output"
-                  Just out -> sendClientEvent Nothing (OutputRemoved out)
-    setUniverse $ U.setOutputs <$> gets outputs <*> gets universe
-
-handleCoreRequest :: ClientId -> Request -> Core s ()
+handleCoreRequest :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m) => ClientId -> Request -> m ()
 handleCoreRequest cid req =
     case req of
          WindowCreate       wid sid   -> do
@@ -280,8 +299,7 @@ handleCoreRequest cid req =
          WindowSetClass     wid cls   -> modifyWindow wid $ \w -> w { winClass = cls }
 
          SurfaceCreate      sid      -> do
-             sg   <- asks backendSurfGet
-             surf <- create <$> liftIO sg
+             surf <- create <$> backendSurfGet
              modifySurfaces $ SM.insert sid surf
          SurfaceDestroy     sid      -> checkError BadSurface . modifySurfacesFail $ SM.delete sid
          SurfaceAttach      sid tid  -> checkError BadSurface . modifySurfacesFail $ SM.attach sid tid
@@ -291,14 +309,12 @@ handleCoreRequest cid req =
          SurfacePlaceAbove  sid tid  -> checkError BadSurface . modifySurfacesFail $ SM.addShuffle PlaceAbove sid tid
          SurfacePlaceBelow  sid tid  -> checkError BadSurface . modifySurfacesFail $ SM.addShuffle PlaceBelow sid tid
     where
-        modifyClient :: (ClientData s -> ClientData s) -> Core s ()
         modifyClient f = modify $ \s -> s { clients = M.adjust f cid (clients s) }
         modifyWindows f = modifyClient $ \c -> c { windows = f (windows c) }
         modifyWindow wid f = modifyWindows $ M.adjust f wid
         modifySurfaces f = modifyClient $ \c -> c { surfaces = f (surfaces c) }
         modifySurface f = modifySurfaces . SM.modifySurface f
 
-        modifyClientFail :: (ClientData s -> Maybe (ClientData s)) -> Core s Bool
         modifyClientFail f = state $ \s ->
             case M.lookup cid (clients s) >>= f of
               Nothing -> (False, s)
@@ -307,7 +323,6 @@ handleCoreRequest cid req =
         modifySurfacesFail f = modifyClientFail $ \cd ->
             (\s -> cd { surfaces = s }) <$> f (surfaces cd)
 
-        stateClient :: (ClientData s -> Maybe (a, ClientData s)) -> Core s (Maybe a)
         stateClient f = state $ \s ->
             case M.lookup cid (clients s) >>= f of
               Nothing      -> (Nothing, s)
@@ -320,82 +335,28 @@ handleCoreRequest cid req =
               Nothing -> return False
               Just ss -> True <$ backendCommit ss
 
-        checkError err m = m >>= (`unless` sendClientEvent (Just cid) (Error err))
+        checkError err m = m >>= (`unless` clientEvent (Just cid) (Error err))
 
-handleMsg :: Message -> Core s ()
-handleMsg msg =
-    case msg of
-         BackendEvent  evt     -> handleBackendEvent evt
-         ClientRequest cid req -> handleCoreRequest cid req
-         ClientAdd     cid evt -> modify $ \s -> s { clients = M.insert cid (newClientData evt) (clients s) }
-         ClientDel     cid     -> modify $ \s -> s { clients = M.delete cid (clients s) }
+-- | Handles the various core inputs.
+handleInput :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m) => CoreInputF s a -> m a
+handleInput input =
+    case input of
+         BackendEvent  evt     a -> handleBackendEvent evt >> return a
+         ClientRequest cid req a -> handleCoreRequest cid req >> return a
+         ClientAdd     cid     a -> modify (\s -> s { clients = M.insert cid newClientData (clients s) }) >> return a
+         ClientDel     cid     a -> modify (\s -> s { clients = M.delete cid (clients s) }) >> return a
     where
         newClientData = ClientData SM.empty M.empty
 
-sendBackendRequest :: B.Request s -> Core s ()
-sendBackendRequest req = asks backendRequest >>= liftIO . (`writeMChan` req)
-
--- | Sends an event to one or all clients.
---
--- If passed 'Nothing' as the first argument, the event is sent to all clients,
--- otherwise it is only sent to the specified client.
---
--- Trying to send an event to a client that does not exist results in an error.
-sendClientEvent :: Maybe ClientId -> Event -> Core s ()
-sendClientEvent Nothing evt =
-    gets clients >>=
-        mapM_ (liftIO . (`writeMChan` evt) . output) . M.elems
-sendClientEvent (Just cid) evt =
-    gets clients >>=
-        maybe
-            (error "Trying to send an event to an unknown client")
-            (liftIO . (`writeMChan` evt) . output) . M.lookup cid
-
--- | Returns a producer of messages.
---
--- Passes on backend events, and creates threads to handle new clients.
-msgGenerator :: RMChan (WMChan Event, RMChan Request) -- ^ New client.
-             -> RMChan B.Event                        -- ^ Incoming backend events.
-             -> IO (RMChan Message)                   -- ^ Combined backend and client data.
-msgGenerator newClients bEvt = do
-    (msgRChan, msgWChan) <- newMChan
-    dVar                 <- newMVar . D.singletonI $ D.Interval minBound maxBound
-
-    -- Pass on events from the backend.
-    linkAsync . readUntilClosed bEvt $ writeMChan msgWChan . BackendEvent
-
-    -- Wait for new clients.
-    linkAsync . readUntilClosed newClients $ \(cEvt, cReq) -> do
-        -- Create client ID, and notify the core
-        cid <- modifyMVar dVar (return . swap . fromMaybe (error "Ran out of client IDs!") . D.minView)
-        writeMChan msgWChan $ ClientAdd cid cEvt
-
-        -- Pass on requests from the client, and signal the core when it is closed.
-        linkAsync $ do
-            readUntilClosed cReq $ writeMChan msgWChan . ClientRequest cid
-            writeMChan msgWChan $ ClientDel cid
-            modifyMVar_ dVar (return . D.insert cid)
-
-    return msgRChan
+-- | Interprets a set of core inputs into core outputs.
+interpretCore :: (MonadFree (CoreInputF s) m, MonadFree (CoreOutputF s) n)
+              => ((forall x. (CoreInputF s) x -> StateT (CoreState s) n x) -> m a -> StateT (CoreState s) n a)
+              -> m a
+              -> n a
+interpretCore fld m = evalStateT (fld handleInput m) initialState
     where
-        linkAsync io = async io >>= link
-
--- | Runs the core.
-run :: WMChan (B.Request s)                  -- ^ Outgoing requests to the backend.
-    -> RMChan B.Event                        -- ^ Incoming events from the backend.
-    -> IO s                                  -- ^ An IO computation to create a new backend surface.
-    -> RMChan (WMChan Event, RMChan Request) -- ^ New client connections.
-    -> IO ()
-run bReq bEvt bSurfGet newClients = do
-    msg <- msgGenerator newClients bEvt
-
-    let cd = CoreData { backendRequest = bReq
-                      , backendSurfGet = bSurfGet
-                      }
-        cs = CoreState { outputs  = []
-                       , clients  = M.empty
-                       , universe = U.create ["workspace"]
-                       , layedOut = []
-                       }
-
-    runCore cd cs $ readUntilClosed msg handleMsg
+        initialState = CoreState { outputs  = []
+                                 , clients  = M.empty
+                                 , universe = U.create ["workspace"]
+                                 , layedOut = []
+                                 }

@@ -10,13 +10,11 @@ module Woburn.Core
     , Event (..)
     , Error
     , ClientId
-    , interpretCore
+    , handleInput
+    , newCoreState
 
     -- * Core input commands.
-    , clientAdd
-    , clientDel
-    , clientRequest
-    , backendEvent
+    , CoreInput (..)
 
     -- * Core output.
     , CoreOutputF (..)
@@ -102,14 +100,12 @@ data Error =
   | BadWindow
   deriving (Eq, Show)
 
-data CoreInputF s a =
-    ClientAdd ClientId a
-  | ClientDel ClientId a
-  | ClientRequest ClientId Request a
-  | BackendEvent B.Event a
-  deriving (Eq, Show, Functor)
-
-$(makeFree ''CoreInputF)
+data CoreInput s =
+    ClientAdd ClientId
+  | ClientDel ClientId
+  | ClientRequest ClientId Request
+  | BackendEvent B.Event
+  deriving (Eq, Show)
 
 data CoreOutputF s a =
     ClientEvent (Maybe ClientId) Event a
@@ -338,25 +334,21 @@ handleCoreRequest cid req =
         checkError err m = m >>= (`unless` clientEvent (Just cid) (Error err))
 
 -- | Handles the various core inputs.
-handleInput :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m) => CoreInputF s a -> m a
+handleInput :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m) => CoreInput s -> m ()
 handleInput input =
     case input of
-         BackendEvent  evt     a -> handleBackendEvent evt >> return a
-         ClientRequest cid req a -> handleCoreRequest cid req >> return a
-         ClientAdd     cid     a -> modify (\s -> s { clients = M.insert cid newClientData (clients s) }) >> return a
-         ClientDel     cid     a -> modify (\s -> s { clients = M.delete cid (clients s) }) >> return a
+         BackendEvent  evt     -> handleBackendEvent evt
+         ClientRequest cid req -> handleCoreRequest cid req
+         ClientAdd     cid     -> modify (\s -> s { clients = M.insert cid newClientData (clients s) })
+         ClientDel     cid     -> modify (\s -> s { clients = M.delete cid (clients s) })
     where
         newClientData = ClientData SM.empty M.empty
 
--- | Interprets a set of core inputs into core outputs.
-interpretCore :: (MonadFree (CoreInputF s) m, MonadFree (CoreOutputF s) n)
-              => ((forall x. (CoreInputF s) x -> StateT (CoreState s) n x) -> m a -> StateT (CoreState s) n a)
-              -> m a
-              -> n a
-interpretCore fld m = evalStateT (fld handleInput m) initialState
-    where
-        initialState = CoreState { outputs  = []
-                                 , clients  = M.empty
-                                 , universe = U.create ["workspace"]
-                                 , layedOut = []
-                                 }
+-- | Creates a new 'CoreState'.
+newCoreState :: CoreState s
+newCoreState =
+    CoreState { outputs  = []
+              , clients  = M.empty
+              , universe = U.create ["workspace"]
+              , layedOut = []
+              }

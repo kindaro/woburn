@@ -4,14 +4,14 @@ where
 
 import Data.Int
 import Graphics.Wayland
+import Woburn.Frontend.Types
 import Woburn.Protocol
 
 -- | The global display object.
 display :: Object Server WlDisplay
 display = Object 1
 
-
-displaySlots :: MonadDispatch Server m => Slots Server WlDisplay m
+displaySlots :: Slots Server WlDisplay Frontend
 displaySlots =
     WlDisplaySlots { wlDisplaySync        = displaySync
                    , wlDisplayGetRegistry = displayGetRegistry

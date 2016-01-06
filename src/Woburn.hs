@@ -57,15 +57,14 @@ logError :: Either ObjectError () -> IO ()
 logError = either (hPrint stderr) return
 
 -- | Waits for incoming client connections, and spins of new threads to run them.
-waitForClients :: Socket -> WMChan (WMChan Event, RMChan Request) -> IO ()
-waitForClients socket wChan = do
+waitForClients :: WMChan (WMChan Event, RMChan Request) -> Socket -> IO ()
+waitForClients wChan socket = forever $ do
     clientSocket <- accept socket
     (rEvt, wEvt) <- newMChan
     (rReq, wReq) <- newMChan
     _            <- forkIO $ finally (runClient clientSocket rEvt wReq) (close clientSocket >> closeMChan wReq)
 
     writeMChan wChan (wEvt, rReq)
-    waitForClients socket wChan
 
 -- | Handles events and requests going to and from the different clients.
 clientManager :: RMChan (WMChan Event, RMChan Request)
@@ -107,8 +106,8 @@ run path = do
     (inpRd, inpWr)            <- newMChan
     (clientRd, clientWr)      <- newMChan
     (bReqWr, bEvtRd, surfGet) <- gtkBackend
-    bracket (listen path) (\sock -> async (waitForClients sock clientWr) >>= link) close
 
+    async (bracket (listen path) close (waitForClients clientWr)) >>= link
     async (readUntilClosed bEvtRd (writeMChan inpWr . BackendEvent)) >>= link
     async (clientManager clientRd inpWr clientEvts) >>= link
 

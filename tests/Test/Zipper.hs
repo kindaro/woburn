@@ -4,13 +4,23 @@ module Test.Zipper
     )
 where
 
+import Control.Monad.Writer
 import Data.Foldable
+import Data.List (sort)
 import Data.Maybe
 import Data.Word
 import Data.STree
 import Data.STree.Zipper
 import Test.Arbitrary ()
 import Test.QuickCheck hiding (label)
+
+walkDown :: Zipper a -> Gen (Zipper a)
+walkDown z = case getTree z of
+               STree [] _ [] -> return z
+               STree ls _ rs -> do
+                   n <- choose (0, length (ls ++ rs) - 1)
+                   let Just z' = foldl' (>>=) (down z) (replicate n right)
+                   walkDown z'
 
 prop_insert :: Word32 -> [Word32] -> Property
 prop_insert root cs =
@@ -33,13 +43,6 @@ prop_down_up t =
         walkUp z = case up z of
                      Nothing -> z
                      Just z' -> walkUp z'
-
-        walkDown z = case getTree z of
-                       STree [] _ [] -> return z
-                       STree ls _ rs -> do
-                           n <- choose (0, length (ls ++ rs) - 1)
-                           let Just z' = foldl' (>>=) (down z) (replicate n right)
-                           walkDown z'
 
 prop_left_right_1 :: STree Word32 -> Property
 prop_left_right_1 t@(STree l _ r) =
@@ -65,6 +68,13 @@ prop_left_right_2 t@(STree l _ r) =
 
 prop_children :: STree Word32 -> Property
 prop_children t@(STree l _ r) = l ++ r === map getTree (children $ fromTree t)
+
+prop_foldable :: STree Word32 -> Property
+prop_foldable t = forAll (walkDown $ fromTree t) $ \z -> sort (toList t) === sort (toList z)
+
+prop_traversable :: STree Word32 -> Property
+prop_traversable t = forAll (walkDown $ fromTree t) $ \z ->
+    sort (toList t) === sort (execWriter $ traverse (tell . (:[])) z)
 
 return []
 zipperTests :: IO Bool

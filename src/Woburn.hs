@@ -107,11 +107,11 @@ run path = do
     (clientRd, clientWr)      <- newMChan
     (bReqWr, bEvtRd, surfGet) <- gtkBackend
 
-    async (bracket (listen path) close (waitForClients clientWr)) >>= link
-    async (readUntilClosed bEvtRd (writeMChan inpWr . BackendEvent)) >>= link
-    async (clientManager clientRd inpWr clientEvts) >>= link
-
-    evalStateT (readUntilClosed inpRd (runCore surfGet bReqWr clientEvts)) newCoreState
+    bracket (listen path) close $ \sock -> do
+        async (waitForClients clientWr sock) >>= link
+        async (readUntilClosed bEvtRd (writeMChan inpWr . BackendEvent)) >>= link
+        async (clientManager clientRd inpWr clientEvts) >>= link
+        evalStateT (readUntilClosed inpRd (runCore surfGet bReqWr clientEvts)) newCoreState
     where
         runCore surfGet reqWr evtWr inp =
             StateT $ foldF (interpretCore surfGet reqWr evtWr) . runStateT (handleInput inp)

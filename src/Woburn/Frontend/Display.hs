@@ -1,15 +1,18 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Woburn.Frontend.Display
+    ( display
+    , displaySlots
+    )
 where
 
+import Control.Monad.State
 import Data.Int
+import qualified Data.Set as S
 import Graphics.Wayland
+import Woburn.Frontend.Display.Object
+import Woburn.Frontend.Registry
 import Woburn.Frontend.Types
 import Woburn.Protocol
-
--- | The global display object.
-display :: Object Server WlDisplay
-display = Object 1
 
 displaySlots :: Slots Server WlDisplay Frontend
 displaySlots =
@@ -23,4 +26,6 @@ displaySlots =
             wlCallbackDone (signals callback) (0 :: Int32)
             unregisterObject callback
 
-        displayGetRegistry registryCons = undefined
+        displayGetRegistry registryCons = do
+            reg <- registryCons $ return . const registrySlots
+            lift $ modify (\s -> s { registries = S.insert reg (registries s) })

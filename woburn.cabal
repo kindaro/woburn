@@ -31,6 +31,8 @@ executable woburn
                        Woburn.Core
                        Woburn.Frontend
                        Woburn.Frontend.Display
+                       Woburn.Frontend.Display.Object
+                       Woburn.Frontend.Registry
                        Woburn.Frontend.Types
                        Woburn.Layout
                        Woburn.Output

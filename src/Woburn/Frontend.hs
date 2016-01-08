@@ -1,6 +1,7 @@
 module Woburn.Frontend
     ( handleMessage
     , handleEvent
+    , initFrontend
     )
 where
 
@@ -25,3 +26,6 @@ handleMessage msg = do
 -- | Handles an incoming core event.
 handleEvent :: C.Event -> Frontend ()
 handleEvent = undefined
+
+initFrontend :: Frontend ()
+initFrontend = registerObject display displaySlots

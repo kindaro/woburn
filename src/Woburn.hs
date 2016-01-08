@@ -28,24 +28,26 @@ import Woburn.Frontend.Types
 -- | Runs a single client.
 runClient :: Socket -> RMChan Event -> WMChan Request -> IO ()
 runClient sock rEvt wReq = do
-    chan <- newChan
-    ea   <- async . readUntilClosed rEvt $ writeChan chan . Right
+    chan             <- newChan
+    ea               <- async . readUntilClosed rEvt $ writeChan chan . Right
+    ((_, iMgr), iFs) <- foldF interpretFrontend (runFrontend initFrontend newObjectManager initialFrontendState)
     link ea
 
-    forever . (`evalStateT` newObjectManager)  $ do
-        mgr <- get
-        sa  <- liftIO . async $ recv (messageLookup mgr) sock >>= writeChan chan . Left
+    forever . (`evalStateT` (iMgr, iFs))  $ do
+        (mgr, fs) <- get
+        sa        <- liftIO . async $ recv (messageLookup mgr) sock >>= writeChan chan . Left
         liftIO $ link sa
-        m   <- liftIO $ readChan chan
+
+        m         <- liftIO $ readChan chan
         liftIO $ cancel sa
 
         let f = case m of
                   Left  msg -> handleMessage msg
                   Right evt -> handleEvent evt
 
-        (res, mgr') <- liftIO $ foldF interpretFrontend (runFrontend f mgr)
+        ((res, mgr'), fs') <- liftIO $ foldF interpretFrontend (runFrontend f mgr fs)
 
-        put mgr'
+        put (mgr', fs')
         liftIO $ logError res
     where
         interpretFrontend (SendMessage msg a) = send sock msg >> return a

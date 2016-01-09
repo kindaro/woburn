@@ -1,6 +1,6 @@
-{ mkDerivation, base, containers, diet-set, linear, mtl, QuickCheck, async
-, stdenv, wayland-wire, vimEnv, cabal-install, wayland, pkgconfig, hlint
-, git, less, ghc-mod, stm, stm-chans, dlist, gtk, ghc-events, threadscope
+{ mkDerivation, async, base, containers, diet-set, dlist, free, gtk
+, lens, linear, mtl, process, QuickCheck, stdenv, stm, stm-chans
+, template-haskell, transformers, wayland-wire
 }:
 mkDerivation {
   pname = "woburn";
@@ -8,12 +8,14 @@ mkDerivation {
   src = ./.;
   isLibrary = false;
   isExecutable = true;
-  buildTools = [ vimEnv cabal-install pkgconfig hlint git less ghc-mod ghc-events threadscope ];
   buildDepends = [
-    base containers diet-set linear mtl wayland-wire wayland async stm stm-chans dlist gtk
+    async base containers diet-set dlist free gtk lens linear mtl
+    process stm stm-chans template-haskell transformers wayland-wire
   ];
   testDepends = [
-    base containers diet-set linear mtl QuickCheck wayland-wire async stm stm-chans dlist gtk
+    async base containers diet-set dlist free gtk lens linear mtl
+    process QuickCheck stm stm-chans template-haskell transformers
+    wayland-wire
   ];
   description = "Wayland compositor";
   license = stdenv.lib.licenses.gpl3;

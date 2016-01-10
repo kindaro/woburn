@@ -3,12 +3,10 @@ module Woburn.Path
     )
 where
 
-import Control.Applicative
-import Prelude
-import System.Process
+import System.FilePath
 
--- | Uses pkg-config to find the path of the wayland protocol specification.
-waylandXmlPath :: IO String
-waylandXmlPath =
-    (++ "/wayland.xml") . head . lines
-    <$> readProcess "pkg-config" ["--variable=pkgdatadir", "wayland-server"] ""
+xmlPath :: String -> String
+xmlPath = ("protocols" </>)
+
+waylandXmlPath :: String
+waylandXmlPath = xmlPath "wayland.xml"

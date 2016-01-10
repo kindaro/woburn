@@ -1,6 +1,6 @@
-{ mkDerivation, async, base, containers, diet-set, dlist, free, gtk
-, lens, linear, mtl, process, QuickCheck, stdenv, stm, stm-chans
-, template-haskell, transformers, wayland-wire
+{ mkDerivation, async, base, containers, diet-set, dlist, filepath
+, free, gtk, lens, linear, mtl, process, QuickCheck, stdenv, stm
+, stm-chans, template-haskell, transformers, wayland-wire
 }:
 mkDerivation {
   pname = "woburn";
@@ -9,12 +9,13 @@ mkDerivation {
   isLibrary = false;
   isExecutable = true;
   buildDepends = [
-    async base containers diet-set dlist free gtk lens linear mtl
-    process stm stm-chans template-haskell transformers wayland-wire
+    async base containers diet-set dlist filepath free gtk lens linear
+    mtl process stm stm-chans template-haskell transformers
+    wayland-wire
   ];
   testDepends = [
-    async base containers diet-set dlist free gtk lens linear mtl
-    process QuickCheck stm stm-chans template-haskell transformers
+    async base containers diet-set dlist filepath free gtk lens linear
+    mtl process QuickCheck stm stm-chans template-haskell transformers
     wayland-wire
   ];
   description = "Wayland compositor";

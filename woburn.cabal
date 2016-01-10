@@ -68,7 +68,8 @@ executable woburn
                        stm-chans,
                        dlist,
                        gtk >= 0.13,
-                       free >= 4.12
+                       free >= 4.12,
+                       filepath
   hs-source-dirs:      src
   default-language:    Haskell2010
   ghc-options:         -Wall -threaded -rtsopts
@@ -113,4 +114,5 @@ test-suite test
                        dlist,
                        gtk >= 0.13,
                        free >= 4.12,
+                       filepath,
                        QuickCheck

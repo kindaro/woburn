@@ -10,4 +10,4 @@ import Graphics.Wayland
 import Language.Haskell.TH (runIO)
 import Woburn.Path
 
-$(runIO waylandXmlPath >>= generateFromXml Server)
+$(generateFromXml Server waylandXmlPath)

@@ -10,6 +10,8 @@ module Woburn.Frontend.Types
     , sendRequest
     , GlobalCons (..)
     , initialFrontendState
+    , nextEventSerial
+    , curEventSerial
     )
 where
 
@@ -39,8 +41,9 @@ data GlobalCons =
     forall i . (DispatchInterface i, Dispatchable Server i) => GlobalCons (SObject i -> Frontend (Slots Server i Frontend))
 
 data FrontendState =
-    FrontendState { registries :: S.Set (SObject WlRegistry)
-                  , globals    :: M.Map Word32 GlobalCons
+    FrontendState { registries  :: S.Set (SObject WlRegistry)
+                  , globals     :: M.Map GlobalId GlobalCons
+                  , eventSerial :: Word32
                   }
 
 -- | The type of the frontend computations.
@@ -53,8 +56,15 @@ runFrontend :: Frontend a
             -> F FrontendF ((Either ObjectError a, ObjectManager Server Inner), FrontendState)
 runFrontend f = runStateT . runW f
 
+nextEventSerial :: Frontend Word32
+nextEventSerial = lift . state $ \s -> (eventSerial s + 1, s { eventSerial = eventSerial s + 1 })
+
+curEventSerial :: Frontend Word32
+curEventSerial = lift $ gets eventSerial
+
 initialFrontendState :: FrontendState
 initialFrontendState =
-    FrontendState { registries = S.empty
-                  , globals    = M.empty
+    FrontendState { registries  = S.empty
+                  , globals     = M.empty
+                  , eventSerial = 0
                   }

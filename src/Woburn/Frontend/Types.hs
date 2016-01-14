@@ -2,6 +2,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Woburn.Frontend.Types
     ( Frontend
     , FrontendState (..)
@@ -9,6 +10,7 @@ module Woburn.Frontend.Types
     , FrontendF (..)
     , sendRequest
     , GlobalCons (..)
+    , GlobalId (..)
     , initialFrontendState
     , nextEventSerial
     , curEventSerial
@@ -19,6 +21,7 @@ import Control.Monad.Free.Church
 import Control.Monad.State
 import qualified Data.Map as M
 import qualified Data.Set as S
+import qualified Data.Set.Diet as D
 import Data.Word
 import Graphics.Wayland
 import qualified Woburn.Core as C
@@ -38,11 +41,15 @@ sendRequest :: C.Request -> Frontend ()
 sendRequest req = lift . liftF $ SendRequest req ()
 
 data GlobalCons =
-    forall i . (DispatchInterface i, Dispatchable Server i) => GlobalCons (SObject i -> Frontend (Slots Server i Frontend))
+    forall i . (DispatchInterface i, Dispatchable Server i) => GlobalCons (SignalConstructor Server i Frontend)
+
+newtype GlobalId = GlobalId Word32
+    deriving (Eq, Show, Ord, Enum, Bounded, WireEnum)
 
 data FrontendState =
     FrontendState { registries  :: S.Set (SObject WlRegistry)
                   , globals     :: M.Map GlobalId GlobalCons
+                  , globalIds   :: D.Diet GlobalId
                   , eventSerial :: Word32
                   }
 
@@ -66,5 +73,6 @@ initialFrontendState :: FrontendState
 initialFrontendState =
     FrontendState { registries  = S.empty
                   , globals     = M.empty
+                  , globalIds   = D.singletonI $ D.Interval minBound maxBound
                   , eventSerial = 0
                   }

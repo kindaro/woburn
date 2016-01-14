@@ -27,3 +27,4 @@ displaySlots =
         displayGetRegistry registryCons = do
             reg <- registryCons $ return . const registrySlots
             lift $ modify (\s -> s { registries = S.insert reg (registries s) })
+            announceGlobals reg

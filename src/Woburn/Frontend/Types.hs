@@ -19,10 +19,12 @@ where
 
 import Control.Monad.Free.Church
 import Control.Monad.State
+import Data.Int
+import Data.Region
+import Data.Word
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Set.Diet as D
-import Data.Word
 import Graphics.Wayland
 import qualified Woburn.Core as C
 import Woburn.Protocol
@@ -50,6 +52,7 @@ data FrontendState =
     FrontendState { registries  :: S.Set (SObject WlRegistry)
                   , globals     :: M.Map GlobalId GlobalCons
                   , globalIds   :: D.Diet GlobalId
+                  , regions     :: M.Map (SObject WlRegion) (Region Int32)
                   , eventSerial :: Word32
                   }
 
@@ -74,5 +77,6 @@ initialFrontendState =
     FrontendState { registries  = S.empty
                   , globals     = M.empty
                   , globalIds   = D.singletonI $ D.Interval minBound maxBound
+                  , regions     = M.empty
                   , eventSerial = 0
                   }

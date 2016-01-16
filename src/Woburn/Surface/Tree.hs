@@ -24,6 +24,7 @@ import Data.STree
 import Data.STree.Zipper hiding (delete)
 import qualified Data.STree.Zipper as Z
 import Data.Traversable
+import Prelude
 import Woburn.Surface
 
 -- | Searches for a specific surface in a surface set and returns a zipper to it.

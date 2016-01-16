@@ -9,7 +9,9 @@ import Control.Monad.Except
 import Graphics.Wayland
 import qualified Woburn.Core as C
 import Woburn.Protocol
+import Woburn.Frontend.Compositor
 import Woburn.Frontend.Display
+import Woburn.Frontend.Registry
 import Woburn.Frontend.Types
 
 -- | Handles an incoming message, sending a signal through the display object
@@ -28,4 +30,6 @@ handleEvent :: C.Event -> Frontend ()
 handleEvent = undefined
 
 initFrontend :: Frontend ()
-initFrontend = registerObject display displaySlots
+initFrontend = do
+    registerObject display displaySlots
+    void $ addGlobal compositorSlots

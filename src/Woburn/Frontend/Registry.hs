@@ -10,12 +10,12 @@ module Woburn.Frontend.Registry
 where
 
 import Control.Monad
+import Control.Monad.Except
 import Control.Monad.State
 import qualified Data.Map as M
 import qualified Data.Set.Diet as D
 import Data.Word
 import Graphics.Wayland
-import Woburn.Frontend.Display.Object
 import Woburn.Frontend.Types
 import Woburn.Protocol
 
@@ -34,11 +34,12 @@ addGlobal :: (DispatchInterface i, Dispatchable Server i) => SignalConstructor S
 addGlobal cons = do
     let globalCons = GlobalCons cons
 
-    gid <- lift . state $ \s ->
+    mgid <- lift . state $ \s ->
         case D.minView (globalIds s) of
-          Nothing      -> error "out of global IDs"
-          Just (a, gs) -> (a, s { globalIds = gs, globals = M.insert a globalCons (globals s) })
+          Nothing      -> (throwError $ ErrUser "out of global IDs", s)
+          Just (a, gs) -> (return a, s { globalIds = gs, globals = M.insert a globalCons (globals s) })
 
+    gid <- mgid
     mapM_ (\r -> announceGlobal r gid globalCons) =<< lift (gets registries)
     return gid
 
@@ -62,5 +63,4 @@ registrySlots = WlRegistrySlots { wlRegistryBind = registryBind }
             gs <- M.lookup (GlobalId globalId) <$> lift (gets globals)
             case gs of
               Just (GlobalCons slots) -> void (cons slots)
-              Nothing                 ->
-                  wlDisplayError (signals display) (fromIntegral globalId) WlDisplayErrorInvalidObject "unknown object"
+              Nothing                 -> protocolError (fromIntegral globalId) "Unknown global object"

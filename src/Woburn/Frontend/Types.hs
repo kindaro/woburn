@@ -6,6 +6,7 @@
 module Woburn.Frontend.Types
     ( Frontend
     , FrontendState (..)
+    , FrontendSurfaceData (..)
     , runFrontend
     , FrontendF (..)
     , sendRequest
@@ -26,7 +27,9 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Set.Diet as D
 import Graphics.Wayland
+import Linear
 import qualified Woburn.Core as C
+import Woburn.Buffer
 import Woburn.Protocol
 
 data FrontendF a =
@@ -48,12 +51,25 @@ data GlobalCons =
 newtype GlobalId = GlobalId Word32
     deriving (Eq, Show, Ord, Enum, Bounded, WireEnum)
 
+data FrontendSurfaceData =
+    FrontendSurfaceData { fsDamageSurface   :: Region Int32
+                        , fsDamageBuffer    :: Region Int32
+                        , fsOpaque          :: Region Int32
+                        , fsInput           :: Region Int32
+                        , fsBuffer          :: Maybe Buffer
+                        , fsBufferOffset    :: V2 Int32
+                        , fsBufferTransform :: WlOutputTransform
+                        , fsBufferScale     :: Int32
+                        }
+
 data FrontendState =
     FrontendState { registries  :: S.Set (SObject WlRegistry)
                   , globals     :: M.Map GlobalId GlobalCons
                   , globalIds   :: D.Diet GlobalId
                   , regions     :: M.Map (SObject WlRegion) (Region Int32)
                   , eventSerial :: Word32
+                  , surfaceData :: M.Map (SObject WlSurface) FrontendSurfaceData
+                  , buffers     :: M.Map (SObject WlBuffer) Buffer
                   }
 
 -- | The type of the frontend computations.
@@ -79,4 +95,6 @@ initialFrontendState =
                   , globalIds   = D.singletonI $ D.Interval minBound maxBound
                   , regions     = M.empty
                   , eventSerial = 0
+                  , surfaceData = M.empty
+                  , buffers     = M.empty
                   }

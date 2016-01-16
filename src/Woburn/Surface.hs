@@ -41,7 +41,7 @@ data ShuffleOperation =
 data SurfaceState =
     SurfaceState { surfBuffer       :: Maybe Buffer
                  , surfBufferOffset :: V2 Int32
-                 , surfBufferScale  :: Int
+                 , surfBufferScale  :: Int32
                  , surfDamage       :: Region Int32
                  , surfOpaque       :: Region Int32
                  , surfInput        :: Region Int32

@@ -7,6 +7,8 @@ module Data.Region
     , outside
     , add
     , sub
+    , scale
+    , offset
     )
 where
 
@@ -20,6 +22,17 @@ data RegionData a =
 
 newtype Region a = Region { getData :: [RegionData a] }
     deriving (Eq, Show)
+
+instance Functor RegionData where
+    fmap f (Add r) = Add $ fmap f r
+    fmap f (Sub r) = Sub $ fmap f r
+
+instance Functor Region where
+    fmap f (Region rs) = Region $ map (fmap f) rs
+
+instance Num a => Monoid (Region a) where
+    mempty = empty
+    mappend (Region as) (Region bs) = Region (as ++ bs)
 
 -- | Checks if a point is inside a region.
 inside :: Ord a => V2 a -> Region a -> Bool
@@ -48,3 +61,14 @@ add r (Region rs) = Region (Add r : rs)
 -- | Subtracts a rectangle from the region.
 sub :: R.Rect a -> Region a -> Region a
 sub r (Region rs) = Region (Sub r : rs)
+
+-- | Scales a region.
+scale :: Num a => a -> Region a -> Region a
+scale s = fmap (* s)
+
+-- | Offsets a region.
+offset :: Num a => V2 a -> Region a -> Region a
+offset off (Region rs) = Region $ map f rs
+    where
+        f (Add r) = Add (R.shift off r)
+        f (Sub r) = Sub (R.shift off r)

@@ -27,7 +27,7 @@ import Text.Printf
 data GtkBuffer =
     GtkBuffer { buffer :: Buffer
               , offset :: V2 Int32
-              , scale  :: Int
+              , scale  :: Int32
               , pixbuf :: Pixbuf
               }
 

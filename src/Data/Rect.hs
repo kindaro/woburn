@@ -4,6 +4,7 @@ module Data.Rect
     , outside
     , shiftX
     , shiftY
+    , shift
     , width
     , height
     , size
@@ -11,7 +12,6 @@ module Data.Rect
 where
 
 import Control.Lens ((&), (%~), (^.))
-import Data.Function
 import Linear
 
 -- | An inclusive rectangle.
@@ -49,12 +49,12 @@ outside p = not . inside p
 
 -- | Shifts the rectangle along the X-axis.
 shiftX :: Num a => a -> Rect a -> Rect a
-shiftX d (Rect a b) = (Rect `on` f) a b
-    where
-        f x = x & _x %~ (+ d)
+shiftX d = shift (V2 d 0)
 
 -- | Shifts the rectangle along the Y-axis.
 shiftY :: Num a => a -> Rect a -> Rect a
-shiftY d (Rect a b) = (Rect `on` f) a b
-    where
-        f x = x & _y %~ (+ d)
+shiftY d = shift (V2 0 d)
+
+-- | Shifts the rectangle.
+shift :: Num a => V2 a -> Rect a -> Rect a
+shift off (Rect a b) = Rect (a + off) (b + off)

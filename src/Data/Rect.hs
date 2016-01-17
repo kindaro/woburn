@@ -11,7 +11,8 @@ module Data.Rect
     )
 where
 
-import Control.Lens ((&), (%~), (^.))
+import Control.Monad.Zip
+import Control.Lens ((^.))
 import Linear
 
 -- | An inclusive rectangle.
@@ -41,7 +42,9 @@ size r = V2 (width r) (height r)
 
 -- | Checks if a point is inside a rectangle.
 inside :: Ord a => V2 a -> Rect a -> Bool
-inside p (Rect start stop) = p >= start && p <= stop
+inside p (Rect start stop) =
+    and (mzipWith (>=) p start) &&
+    and (mzipWith (<=) p stop)
 
 -- | Checks if a point is outside a rectangle.
 outside :: Ord a => V2 a -> Rect a -> Bool

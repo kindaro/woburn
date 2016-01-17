@@ -6,7 +6,6 @@ where
 
 import Control.Monad.State
 import Data.Maybe
-import Data.Monoid
 import qualified Data.Region as R
 import qualified Data.Map as M
 import Graphics.Wayland
@@ -26,7 +25,7 @@ nextSurfaceData fs =
        }
 
 toSurfaceState :: FrontendSurfaceData -> SurfaceState
-toSurfaceState fs = 
+toSurfaceState fs =
     SurfaceState { surfBuffer       = fsBuffer fs
                  , surfBufferOffset = fsBufferOffset fs
                  , surfBufferScale  = fsBufferScale fs
@@ -38,7 +37,8 @@ toSurfaceState fs =
     where
         combinedDamage =
             fsDamageBuffer fs
-            <> R.scale (fsBufferScale fs) (R.offset (- fsBufferOffset fs) (fsDamageSurface fs))
+            `R.union`
+            R.scale (fsBufferScale fs) (R.offset (- fsBufferOffset fs) (fsDamageSurface fs))
 
 initialSurfaceData :: FrontendSurfaceData
 initialSurfaceData =
@@ -50,7 +50,7 @@ initialSurfaceData =
                         , fsBufferOffset    = 0
                         , fsBufferTransform = WlOutputTransformNormal
                         , fsBufferScale     = 1
-                        } 
+                        }
 
 surfaceSlots :: SignalConstructor Server WlSurface Frontend
 surfaceSlots surface = do

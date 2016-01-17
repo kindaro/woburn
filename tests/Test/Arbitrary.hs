@@ -5,8 +5,10 @@ where
 import Control.Applicative
 import Control.Arrow
 import Control.Monad.State
+import Data.Rect
 import Data.STree
 import Data.Word
+import Linear
 import Prelude
 import Woburn.Surface
 import Test.QuickCheck
@@ -42,3 +44,12 @@ instance Arbitrary a => Arbitrary (Surface a) where
         surf <- create <$> arbitrary
         sync <- arbitrary
         return surf { surfSync = sync }
+
+instance (Ord a, Num a, Arbitrary a) => Arbitrary (Rect a) where
+    arbitrary = do
+        pos <- arbitrary
+        off <- arbitrary `suchThat` (\(V2 x y) -> x >= 0 && y >= 0)
+        return $ Rect pos (pos + off)
+
+instance Arbitrary a => Arbitrary (V2 a) where
+    arbitrary = V2 <$> arbitrary <*> arbitrary

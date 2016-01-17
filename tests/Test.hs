@@ -3,6 +3,7 @@ import Control.Monad
 import Prelude
 import System.Exit
 import Test.MChan
+import Test.Region
 import Test.STree
 import Test.SurfaceMap
 import Test.SurfaceTree
@@ -14,6 +15,7 @@ tests = [ surfaceTreeTests
         , sTreeTests
         , zipperTests
         , mChanTests
+        , regionTests
         ]
 
 main :: IO ()

@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -19,6 +18,7 @@ module Woburn.Frontend.Types
 where
 
 import Control.Monad.Free.Church
+import Control.Monad.IO.Class
 import Control.Monad.State
 import Data.Int
 import Data.Region
@@ -35,12 +35,21 @@ import Woburn.Protocol
 data FrontendF a =
     SendMessage Message a
   | SendRequest C.Request a
-  deriving (Functor)
+  | forall b . IoComputation (IO b) (b -> a)
 
-type Inner = StateT FrontendState (F FrontendF)
+instance Functor FrontendF where
+    fmap f (SendMessage msg a) = SendMessage msg (f a)
+    fmap f (SendRequest req a) = SendRequest req (f a)
+    fmap f (IoComputation io g) = IoComputation io (f . g)
+
+newtype Inner a = Inner { unInner :: StateT FrontendState (F FrontendF) a }
+    deriving (Applicative, Functor, Monad, MonadFree FrontendF, MonadState FrontendState)
 
 instance MonadSend Inner where
-    sendMessage msg = lift . liftF $ SendMessage msg ()
+    sendMessage msg = liftF $ SendMessage msg ()
+
+instance MonadIO Inner where
+    liftIO io = liftF $ IoComputation io id
 
 sendRequest :: C.Request -> Frontend ()
 sendRequest req = lift . liftF $ SendRequest req ()
@@ -80,7 +89,7 @@ runFrontend :: Frontend a
             -> ObjectManager Server Inner
             -> FrontendState
             -> F FrontendF ((Either ObjectError a, ObjectManager Server Inner), FrontendState)
-runFrontend f = runStateT . runW f
+runFrontend f = runStateT . unInner . runW f
 
 nextEventSerial :: Frontend Word32
 nextEventSerial = lift . state $ \s -> (eventSerial s + 1, s { eventSerial = eventSerial s + 1 })

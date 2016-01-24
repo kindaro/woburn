@@ -69,7 +69,8 @@ executable woburn
                        dlist,
                        gtk >= 0.13,
                        free >= 4.12,
-                       filepath
+                       filepath,
+                       bindings-posix
   hs-source-dirs:      src
   default-language:    Haskell2010
   ghc-options:         -Wall -threaded -rtsopts
@@ -79,6 +80,7 @@ test-suite test
   type:                exitcode-stdio-1.0
   other-modules:       Test.Arbitrary
                        Test.MChan
+                       Test.Region
                        Test.STree
                        Test.SurfaceMap
                        Test.SurfaceTree
@@ -115,4 +117,5 @@ test-suite test
                        gtk >= 0.13,
                        free >= 4.12,
                        filepath,
+                       bindings-posix,
                        QuickCheck

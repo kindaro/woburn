@@ -7,6 +7,7 @@ module Woburn
     )
 where
 
+import Bindings.Posix.Sys.Mman
 import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Concurrent.MChan.Split
@@ -17,18 +18,47 @@ import Control.Monad.Reader
 import Control.Monad.State
 import Data.Maybe
 import Data.Tuple
+import Data.Word
+import qualified Data.Map as M
 import qualified Data.Set.Diet as D
+import Foreign.ForeignPtr
+import Foreign.Ptr
+import Foreign.C.Types
 import Graphics.Wayland hiding (Event, Request)
 import System.IO
+import System.Posix.Types
 import Woburn.Backend.Gtk
 import Woburn.Core
 import Woburn.Frontend
 import Woburn.Frontend.Types
 import Woburn.Types
 
+foreign import ccall"wrapper"
+    wrapMunmapFinalizer :: (Ptr Word8 -> IO ()) -> IO (FinalizerPtr Word8)
+
+-- | Creates a finalizer that calls munmap.
+makeMunmapFinalizer :: IO (FinalizerPtr Word8, MVar (M.Map (Ptr Word8) CSize))
+makeMunmapFinalizer = do
+    mvar      <- newMVar M.empty
+    finalizer <- wrapMunmapFinalizer (helper mvar)
+    return (finalizer, mvar)
+    where
+        helper :: MVar (M.Map (Ptr Word8) CSize) -> Ptr Word8 -> IO ()
+        helper mvar ptr = do
+            msize <- withMVar mvar (return . M.lookup ptr)
+            case msize of
+              Nothing   -> error "Trying to finalize an mmaped ptr, but can't find its size"
+              Just size -> void $ c'munmap (castPtr ptr) size
+
 -- | Runs a single client.
-runClient :: ClientId -> Socket -> RMChan Event -> WMChan Request -> IO ()
-runClient cid sock rEvt wReq = do
+runClient :: FinalizerPtr Word8
+          -> MVar (M.Map (Ptr Word8) CSize)
+          -> ClientId
+          -> Socket
+          -> RMChan Event
+          -> WMChan Request
+          -> IO ()
+runClient munmapFinalizer finalizerData cid sock rEvt wReq = do
     chan             <- newChan
     ea               <- async . readUntilClosed rEvt $ writeChan chan . Right
     ((_, iMgr), iFs) <- foldF interpretFrontend (runFrontend initFrontend newObjectManager initialFrontendState)
@@ -51,20 +81,31 @@ runClient cid sock rEvt wReq = do
         put (mgr', fs')
         liftIO $ logError res
     where
-        interpretFrontend (SendMessage msg a) = send sock msg >> return a
-        interpretFrontend (SendRequest req a) = writeMChan wReq req >> return a
-        interpretFrontend (GetClientId f    ) = return $ f cid
+        interpretFrontend (SendMessage msg a       ) = send sock msg >> return a
+        interpretFrontend (SendRequest req a       ) = writeMChan wReq req >> return a
+        interpretFrontend (GetClientId f           ) = return $ f cid
+        interpretFrontend (MapMemory (Fd fd) size f) = do
+            let cSize = fromIntegral size
+            ptr <- c'mmap nullPtr cSize c'PROT_READ c'MAP_SHARED fd 0
+            if ptr == c'MAP_FAILED
+              then return $ f Nothing
+              else do
+                  let wordPtr = castPtr ptr
+                  modifyMVar_ finalizerData (return . M.insert wordPtr cSize)
+                  f . Just <$> newForeignPtr munmapFinalizer wordPtr
 
 -- | Logs any 'WError's to stderr.
 logError :: Either ObjectError () -> IO ()
 logError = either (hPrint stderr) return
 
 -- | Waits for incoming client connections, and spins of new threads to run them.
-waitForClients :: MVar (D.Diet ClientId)                          -- ^ A set of free 'ClientId's
+waitForClients :: FinalizerPtr Word8                              -- ^ A finalizer that calls munmap.
+               -> MVar (M.Map (Ptr Word8) CSize)                  -- ^ Data used by the finalizer.
+               -> MVar (D.Diet ClientId)                          -- ^ A set of free 'ClientId's
                -> WMChan (ClientId, WMChan Event, RMChan Request) -- ^ The channel new clients will be announced on.
                -> Socket                                          -- ^ The socket to listen on.
                -> IO ()
-waitForClients clientIds wChan socket = forever $ do
+waitForClients munmapFinalizer finalizerData clientIds wChan socket = forever $ do
     clientSocket <- accept socket
     cid          <- modifyMVar clientIds (return . swap . fromMaybe (error "Ran out of client IDs") . D.minView)
     (rEvt, wEvt) <- newMChan
@@ -72,7 +113,7 @@ waitForClients clientIds wChan socket = forever $ do
     void .
         forkIO $
         finally
-        (runClient cid clientSocket rEvt wReq)
+        (runClient munmapFinalizer finalizerData cid clientSocket rEvt wReq)
         (close clientSocket >> closeMChan wReq >> modifyMVar_ clientIds (return . D.insert cid))
 
     writeMChan wChan (cid, wEvt, rReq)
@@ -110,17 +151,20 @@ clientManager newClients coreInp clientEvts =
 -- "$XDG_RUNTIME_DIR/wayland-0" or "/tmp/wayland-0".
 run :: Maybe String -> IO ()
 run path = do
-    clientEvts                <- newChan
-    (inpRd, inpWr)            <- newMChan
-    (clientRd, clientWr)      <- newMChan
-    (bReqWr, bEvtRd, surfGet) <- gtkBackend
-    clientIds                 <- newMVar . D.singletonI $ D.Interval minBound maxBound
+    clientEvts                 <- newChan
+    (inpRd, inpWr)             <- newMChan
+    (clientRd, clientWr)       <- newMChan
+    (bReqWr, bEvtRd, surfGet)  <- gtkBackend
+    clientIds                  <- newMVar . D.singletonI $ D.Interval minBound maxBound
+    (finalizer, finalizerData) <- makeMunmapFinalizer
 
     bracket (listen path) close $ \sock -> do
-        async (waitForClients clientIds clientWr sock) >>= link
-        async (readUntilClosed bEvtRd (writeMChan inpWr . BackendEvent)) >>= link
-        async (clientManager clientRd inpWr clientEvts) >>= link
+        wc <- async (waitForClients finalizer finalizerData clientIds clientWr sock)
+        be <- async (readUntilClosed bEvtRd (writeMChan inpWr . BackendEvent))
+        cm <- async (clientManager clientRd inpWr clientEvts)
+        mapM_ link [wc, be, cm]
         evalStateT (readUntilClosed inpRd (runCore surfGet bReqWr clientEvts)) newCoreState
+        mapM_ cancel [wc, be, cm]
     where
         runCore surfGet reqWr evtWr inp =
             StateT $ foldF (interpretCore surfGet reqWr evtWr) . runStateT (handleInput inp)

@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -9,6 +10,8 @@ module Woburn.Frontend.Types
     , runFrontend
     , FrontendF (..)
     , sendRequest
+    , mapMemory
+    , getClientId
     , GlobalCons (..)
     , GlobalId (..)
     , initialFrontendState
@@ -18,7 +21,6 @@ module Woburn.Frontend.Types
 where
 
 import Control.Monad.Free.Church
-import Control.Monad.IO.Class
 import Control.Monad.State
 import Data.Int
 import Data.Region
@@ -26,21 +28,21 @@ import Data.Word
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Set.Diet as D
+import Foreign.ForeignPtr
 import Graphics.Wayland
 import Linear
+import System.Posix.Types
 import qualified Woburn.Core as C
 import Woburn.Buffer
 import Woburn.Protocol
+import Woburn.Types
 
 data FrontendF a =
     SendMessage Message a
   | SendRequest C.Request a
-  | forall b . IoComputation (IO b) (b -> a)
-
-instance Functor FrontendF where
-    fmap f (SendMessage msg a) = SendMessage msg (f a)
-    fmap f (SendRequest req a) = SendRequest req (f a)
-    fmap f (IoComputation io g) = IoComputation io (f . g)
+  | GetClientId (ClientId -> a)
+  | MapMemory Fd Int32 (Maybe (ForeignPtr Word8) -> a)
+  deriving (Functor)
 
 newtype Inner a = Inner { unInner :: StateT FrontendState (F FrontendF) a }
     deriving (Applicative, Functor, Monad, MonadFree FrontendF, MonadState FrontendState)
@@ -48,11 +50,14 @@ newtype Inner a = Inner { unInner :: StateT FrontendState (F FrontendF) a }
 instance MonadSend Inner where
     sendMessage msg = liftF $ SendMessage msg ()
 
-instance MonadIO Inner where
-    liftIO io = liftF $ IoComputation io id
-
 sendRequest :: C.Request -> Frontend ()
 sendRequest req = lift . liftF $ SendRequest req ()
+
+getClientId :: Frontend ClientId
+getClientId = lift . liftF $ GetClientId id
+
+mapMemory :: Fd -> Int32 -> Frontend (Maybe (ForeignPtr Word8))
+mapMemory fd size = lift . liftF $ MapMemory fd size id
 
 data GlobalCons =
     forall i . (DispatchInterface i, Dispatchable Server i) => GlobalCons (SignalConstructor Server i Frontend)
@@ -72,13 +77,14 @@ data FrontendSurfaceData =
                         }
 
 data FrontendState =
-    FrontendState { registries  :: S.Set (SObject WlRegistry)
-                  , globals     :: M.Map GlobalId GlobalCons
-                  , globalIds   :: D.Diet GlobalId
-                  , regions     :: M.Map (SObject WlRegion) (Region Int32)
-                  , eventSerial :: Word32
-                  , surfaceData :: M.Map (SObject WlSurface) FrontendSurfaceData
-                  , buffers     :: M.Map (SObject WlBuffer) Buffer
+    FrontendState { registries   :: S.Set (SObject WlRegistry)
+                  , globals      :: M.Map GlobalId GlobalCons
+                  , globalIds    :: D.Diet GlobalId
+                  , regions      :: M.Map (SObject WlRegion) (Region Int32)
+                  , eventSerial  :: Word32
+                  , surfaceData  :: M.Map (SObject WlSurface) FrontendSurfaceData
+                  , buffers      :: M.Map (SObject WlBuffer) Buffer
+                  , bufRefCounts :: M.Map Buffer (Int, SObject WlBuffer)
                   }
 
 -- | The type of the frontend computations.
@@ -99,11 +105,12 @@ curEventSerial = lift $ gets eventSerial
 
 initialFrontendState :: FrontendState
 initialFrontendState =
-    FrontendState { registries  = S.empty
-                  , globals     = M.empty
-                  , globalIds   = D.singletonI $ D.Interval minBound maxBound
-                  , regions     = M.empty
-                  , eventSerial = 0
-                  , surfaceData = M.empty
-                  , buffers     = M.empty
+    FrontendState { registries   = S.empty
+                  , globals      = M.empty
+                  , globalIds    = D.singletonI $ D.Interval minBound maxBound
+                  , regions      = M.empty
+                  , eventSerial  = 0
+                  , surfaceData  = M.empty
+                  , buffers      = M.empty
+                  , bufRefCounts = M.empty
                   }

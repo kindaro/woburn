@@ -9,9 +9,11 @@ import Control.Monad.Except
 import Graphics.Wayland
 import qualified Woburn.Core as C
 import Woburn.Protocol
+import Woburn.Frontend.Buffer
 import Woburn.Frontend.Compositor
 import Woburn.Frontend.Display
 import Woburn.Frontend.Registry
+import Woburn.Frontend.Shm
 import Woburn.Frontend.Types
 
 -- | Handles an incoming message, sending a signal through the display object
@@ -27,7 +29,9 @@ handleMessage msg = do
 
 -- | Handles an incoming core event.
 handleEvent :: C.Event -> Frontend ()
-handleEvent = undefined
+handleEvent evt =
+    case evt of
+      C.BufferReleased buf -> releaseBuffer buf
 
 initFrontend :: Frontend ()
 initFrontend = do

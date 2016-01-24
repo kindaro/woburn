@@ -9,7 +9,6 @@ module Woburn.Core
     ( Request (..)
     , Event (..)
     , Error
-    , ClientId
     , handleInput
     , newCoreState
 
@@ -44,6 +43,7 @@ import Linear
 import Prelude
 
 import qualified Woburn.Backend as B
+import Woburn.Buffer
 import Woburn.Layout
 import Woburn.Output
 import Woburn.Protocol
@@ -51,6 +51,7 @@ import Woburn.Surface
 import qualified Woburn.Surface.Map as SM
 import Woburn.Window
 import qualified Woburn.Universe as U
+import Woburn.Types
 
 data ClientWindowId = ClientWindowId ClientId WindowId
     deriving (Eq, Ord, Show)
@@ -66,9 +67,6 @@ data ClientData s =
     ClientData { surfaces :: SM.SurfaceMap s
                , windows  :: M.Map WindowId Window
                }
-
-newtype ClientId = ClientId Word32
-    deriving (Eq, Ord, Show, Num, Real, Integral, Enum, Bounded)
 
 -- | A core request.
 data Request =
@@ -90,6 +88,7 @@ data Request =
 data Event =
     OutputAdded MappedOutput
   | OutputRemoved MappedOutput
+  | BufferReleased Buffer
   | WindowConfigure WindowId (V2 Word32)
   | Error Error
   deriving (Eq, Show)
@@ -240,14 +239,15 @@ layoutDiff new' old' = filter (`S.notMember` S.fromList old) new
 handleBackendEvent :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m) => B.Event -> m ()
 handleBackendEvent evt = do
     case evt of
-         B.OutputAdded   out -> do
+         B.BufferReleased buf -> clientEvent (Just $ bufClientId buf) (BufferReleased buf)
+         B.OutputAdded    out -> do
              mOut <- state $ \s ->
                  let outs = snd . deleteOutput (outputId out) $ outputs s
                      mOut = mapOutput (outputsRight outs) out
                  in
                  (mOut, s { outputs = mOut : outs })
              clientEvent Nothing (OutputAdded mOut)
-         B.OutputRemoved oid -> do
+         B.OutputRemoved  oid -> do
              mOut <- state $ \s -> second (\x -> s { outputs = x}) . deleteOutput oid $ outputs s
              case mOut of
                   Nothing  -> coreError "Backend removed a non-existing output"

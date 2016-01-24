@@ -24,10 +24,11 @@ import Woburn.Backend.Gtk
 import Woburn.Core
 import Woburn.Frontend
 import Woburn.Frontend.Types
+import Woburn.Types
 
 -- | Runs a single client.
-runClient :: Socket -> RMChan Event -> WMChan Request -> IO ()
-runClient sock rEvt wReq = do
+runClient :: ClientId -> Socket -> RMChan Event -> WMChan Request -> IO ()
+runClient cid sock rEvt wReq = do
     chan             <- newChan
     ea               <- async . readUntilClosed rEvt $ writeChan chan . Right
     ((_, iMgr), iFs) <- foldF interpretFrontend (runFrontend initFrontend newObjectManager initialFrontendState)
@@ -52,33 +53,39 @@ runClient sock rEvt wReq = do
     where
         interpretFrontend (SendMessage msg a) = send sock msg >> return a
         interpretFrontend (SendRequest req a) = writeMChan wReq req >> return a
-
+        interpretFrontend (GetClientId f    ) = return $ f cid
 
 -- | Logs any 'WError's to stderr.
 logError :: Either ObjectError () -> IO ()
 logError = either (hPrint stderr) return
 
 -- | Waits for incoming client connections, and spins of new threads to run them.
-waitForClients :: WMChan (WMChan Event, RMChan Request) -> Socket -> IO ()
-waitForClients wChan socket = forever $ do
+waitForClients :: MVar (D.Diet ClientId)                          -- ^ A set of free 'ClientId's
+               -> WMChan (ClientId, WMChan Event, RMChan Request) -- ^ The channel new clients will be announced on.
+               -> Socket                                          -- ^ The socket to listen on.
+               -> IO ()
+waitForClients clientIds wChan socket = forever $ do
     clientSocket <- accept socket
+    cid          <- modifyMVar clientIds (return . swap . fromMaybe (error "Ran out of client IDs") . D.minView)
     (rEvt, wEvt) <- newMChan
     (rReq, wReq) <- newMChan
-    _            <- forkIO $ finally (runClient clientSocket rEvt wReq) (close clientSocket >> closeMChan wReq)
+    void .
+        forkIO $
+        finally
+        (runClient cid clientSocket rEvt wReq)
+        (close clientSocket >> closeMChan wReq >> modifyMVar_ clientIds (return . D.insert cid))
 
-    writeMChan wChan (wEvt, rReq)
+    writeMChan wChan (cid, wEvt, rReq)
 
 -- | Handles events and requests going to and from the different clients.
-clientManager :: RMChan (WMChan Event, RMChan Request)
+clientManager :: RMChan (ClientId, WMChan Event, RMChan Request)
               -> WMChan (CoreInput s)
               -> Chan (Maybe ClientId, Event)
               -> IO ()
-clientManager newClients coreInp clientEvts = do
-    mvar <- newMVar . D.singletonI $ D.Interval minBound maxBound
-    readUntilClosed newClients (newClient mvar)
+clientManager newClients coreInp clientEvts =
+    readUntilClosed newClients newClient
     where
-        newClient mvar (wEvt, rReq) = do
-            cid       <- modifyMVar mvar (return . swap . fromMaybe (error "Ran out of client IDs") . D.minView)
+        newClient (cid, wEvt, rReq) = do
             evtReader <- async $ do
                 chan <- dupChan clientEvts
                 forever $ do
@@ -91,7 +98,6 @@ clientManager newClients coreInp clientEvts = do
                 cancel evtReader
                 closeMChan wEvt
                 writeMChan coreInp (ClientDel cid)
-                modifyMVar_ mvar (return . D.insert cid)
 
             link evtReader
             link reqWriter
@@ -108,9 +114,10 @@ run path = do
     (inpRd, inpWr)            <- newMChan
     (clientRd, clientWr)      <- newMChan
     (bReqWr, bEvtRd, surfGet) <- gtkBackend
+    clientIds                 <- newMVar . D.singletonI $ D.Interval minBound maxBound
 
     bracket (listen path) close $ \sock -> do
-        async (waitForClients clientWr sock) >>= link
+        async (waitForClients clientIds clientWr sock) >>= link
         async (readUntilClosed bEvtRd (writeMChan inpWr . BackendEvent)) >>= link
         async (clientManager clientRd inpWr clientEvts) >>= link
         evalStateT (readUntilClosed inpRd (runCore surfGet bReqWr clientEvts)) newCoreState

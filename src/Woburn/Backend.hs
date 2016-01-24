@@ -6,6 +6,7 @@ import Data.Rect
 import Data.STree
 import Data.Word
 import Linear
+import Woburn.Buffer
 import Woburn.Output
 import Woburn.Surface
 
@@ -27,4 +28,5 @@ data Request s =
 data Event =
     OutputAdded Output
   | OutputRemoved OutputId
+  | BufferReleased Buffer
   deriving (Eq, Show)

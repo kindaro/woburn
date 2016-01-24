@@ -11,6 +11,7 @@ import qualified Data.Map as M
 import Graphics.Wayland
 import Linear
 import qualified Woburn.Core as C
+import Woburn.Frontend.Buffer
 import Woburn.Frontend.Display.Object
 import Woburn.Frontend.Region
 import Woburn.Frontend.Types
@@ -78,9 +79,11 @@ surfaceSlots surface = do
             lift . modify $ \s -> s { surfaceData = M.delete surface (surfaceData s) }
             unregisterObject surface
 
-        attach buf x y = do
-            bs <- lift $ gets buffers
-            modifySurface $ \s -> s { fsBuffer       = buf >>= (`M.lookup` bs)
+        attach mBufObj x y = do
+            buf <- case mBufObj of
+                     Nothing     -> return Nothing
+                     Just bufObj -> Just <$> acquireBuffer bufObj
+            modifySurface $ \s -> s { fsBuffer       = buf
                                     , fsBufferOffset = V2 x y + fsBufferOffset s
                                     }
 

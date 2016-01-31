@@ -77,7 +77,7 @@ surfaceSlots surface = do
         destroy = do
             sendRequest $ C.SurfaceDestroy surfaceId
             lift . modify $ \s -> s { surfaceData = M.delete surface (surfaceData s) }
-            unregisterObject surface
+            destroyClientObject surface
 
         attach mBufObj x y = do
             buf <- case mBufObj of

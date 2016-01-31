@@ -10,6 +10,7 @@ import Control.Monad.State
 import qualified Data.Map as M
 import Graphics.Wayland
 import Woburn.Buffer
+import Woburn.Frontend.Display.Object
 import Woburn.Frontend.Types
 import Woburn.Protocol
 
@@ -47,4 +48,6 @@ bufferSlots buf bufObj = do
     lift . modify $ \s -> s { buffers = M.insert bufObj buf (buffers s) }
     return WlBufferSlots { wlBufferDestroy = destroy }
     where
-        destroy = lift . modify $ \s -> s { buffers = M.delete bufObj (buffers s) }
+        destroy = do
+            lift . modify $ \s -> s { buffers = M.delete bufObj (buffers s) }
+            destroyClientObject bufObj

@@ -52,7 +52,7 @@ shmPoolCons fmts fd size pool = do
                                    }
                   void . bufferCons $ bufferSlots buf
 
-        destroy = unregisterObject pool
+        destroy = destroyClientObject pool
 
         resize newSize =
             if size >= newSize

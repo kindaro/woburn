@@ -12,6 +12,7 @@ import qualified Data.Map as M
 import qualified Data.Region as R
 import Linear
 import Graphics.Wayland
+import Woburn.Frontend.Display.Object
 import Woburn.Frontend.Types
 import Woburn.Protocol
 
@@ -29,7 +30,7 @@ regionSlots reg = do
     where
         regionDestroy = do
             lift . modify $ \s -> s { regions = M.delete reg (regions s) }
-            unregisterObject reg
+            destroyClientObject reg
 
         regionAdd x y w h =
             lift . modify $ \s -> s { regions = M.adjust (R.add $ mkRect x y w h) reg (regions s) }

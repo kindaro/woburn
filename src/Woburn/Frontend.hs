@@ -42,3 +42,4 @@ initFrontend :: Frontend ()
 initFrontend = do
     registerObject display displaySlots
     void $ addGlobal compositorSlots
+    void . addGlobal $ shmSlots [WlShmFormatArgb8888, WlShmFormatXrgb8888]

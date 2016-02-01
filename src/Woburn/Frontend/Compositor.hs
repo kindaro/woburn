@@ -11,7 +11,7 @@ import Woburn.Frontend.Types
 import Woburn.Protocol
 
 compositorSlots :: SignalConstructor Server WlCompositor Frontend
-compositorSlots obj =
+compositorSlots _ =
     return
         WlCompositorSlots { wlCompositorCreateSurface = createSurface
                           , wlCompositorCreateRegion  = createRegion

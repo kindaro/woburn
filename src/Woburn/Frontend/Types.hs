@@ -34,6 +34,7 @@ import Linear
 import System.Posix.Types
 import qualified Woburn.Core as C
 import Woburn.Buffer
+import Woburn.Output
 import Woburn.Protocol
 import Woburn.Types
 
@@ -85,6 +86,7 @@ data FrontendState =
                   , surfaceData  :: M.Map (SObject WlSurface) FrontendSurfaceData
                   , buffers      :: M.Map (SObject WlBuffer) Buffer
                   , bufRefCounts :: M.Map Buffer (Int, SObject WlBuffer)
+                  , outputs      :: M.Map OutputId (GlobalId, [SObject WlOutput])
                   }
 
 -- | The type of the frontend computations.
@@ -113,4 +115,5 @@ initialFrontendState =
                   , surfaceData  = M.empty
                   , buffers      = M.empty
                   , bufRefCounts = M.empty
+                  , outputs      = M.empty
                   }

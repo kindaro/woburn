@@ -12,6 +12,7 @@ import Woburn.Protocol
 import Woburn.Frontend.Buffer
 import Woburn.Frontend.Compositor
 import Woburn.Frontend.Display
+import Woburn.Frontend.Output
 import Woburn.Frontend.Registry
 import Woburn.Frontend.Shm
 import Woburn.Frontend.Types
@@ -31,7 +32,11 @@ handleMessage msg = do
 handleEvent :: C.Event -> Frontend ()
 handleEvent evt =
     case evt of
-      C.BufferReleased buf -> releaseBuffer buf
+      C.BufferReleased  buf      -> releaseBuffer buf
+      C.OutputAdded     out      -> addOutput out
+      C.OutputRemoved   out      -> removeOutput out
+      C.WindowConfigure wid size -> undefined
+      C.Error           err      -> undefined
 
 initFrontend :: Frontend ()
 initFrontend = do

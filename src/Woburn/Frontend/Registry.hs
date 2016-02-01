@@ -6,6 +6,7 @@ module Woburn.Frontend.Registry
     , announceGlobals
     , addGlobal
     , delGlobal
+    , replaceGlobal
     )
 where
 
@@ -51,6 +52,14 @@ delGlobal gid = do
           , globals   = M.delete gid (globals s)
           }
     mapM_ (\r -> wlRegistryGlobalRemove (signals r) gid) =<< lift (gets registries)
+
+-- | Replaces the constructor for a global object.
+replaceGlobal :: (DispatchInterface i, Dispatchable Server i)
+              => GlobalId
+              -> SignalConstructor Server i Frontend
+              -> Frontend ()
+replaceGlobal gid cons =
+    lift . modify $ \s -> s { globals = M.insert gid (GlobalCons cons) (globals s) }
 
 -- | Returns 'Slots' for the 'WlRegistry' object.
 registrySlots :: Slots Server WlRegistry Frontend

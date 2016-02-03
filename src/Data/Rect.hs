@@ -2,6 +2,7 @@ module Data.Rect
     ( Rect (..)
     , inside
     , outside
+    , overlaps
     , shiftX
     , shiftY
     , shift
@@ -13,7 +14,9 @@ where
 
 import Control.Monad.Zip
 import Control.Lens ((^.))
-import Linear
+import Data.Function
+import qualified Data.Set.Diet as D
+import Linear hiding (project)
 
 -- | An inclusive rectangle.
 --
@@ -49,6 +52,14 @@ inside p (Rect start stop) =
 -- | Checks if a point is outside a rectangle.
 outside :: Ord a => V2 a -> Rect a -> Bool
 outside p = not . inside p
+
+-- | Checks if two rectangles overlap.
+overlaps :: Ord a => Rect a -> Rect a -> Bool
+overlaps a b =
+    on D.overlapping (project _x) a b && on D.overlapping (project _y) a b
+    where
+        -- | Projects a rectangle onto the x- or y-axis.
+        project lens r = D.Interval (topLeft r ^. lens) (bottomRight r ^. lens)
 
 -- | Shifts the rectangle along the X-axis.
 shiftX :: Num a => a -> Rect a -> Rect a

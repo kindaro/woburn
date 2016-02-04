@@ -28,5 +28,6 @@ data Request s =
 data Event =
     OutputAdded Output
   | OutputRemoved OutputId
+  | OutputFrame OutputId
   | BufferReleased Buffer
   deriving (Eq, Show)

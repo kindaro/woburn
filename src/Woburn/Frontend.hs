@@ -15,6 +15,7 @@ import Woburn.Frontend.Display
 import Woburn.Frontend.Output
 import Woburn.Frontend.Registry
 import Woburn.Frontend.Shm
+import Woburn.Frontend.Surface
 import Woburn.Frontend.Types
 
 -- | Handles an incoming message, sending a signal through the display object
@@ -35,6 +36,7 @@ handleEvent evt =
       C.BufferReleased  buf      -> releaseBuffer buf
       C.OutputAdded     out      -> addOutput out
       C.OutputRemoved   out      -> removeOutput out
+      C.SurfaceFrame    surfs    -> surfaceFrame surfs
       C.WindowConfigure wid size -> undefined
       C.Error           err      -> undefined
 

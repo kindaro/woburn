@@ -8,6 +8,7 @@ where
 import Control.Monad.State
 import qualified Data.Set as S
 import Graphics.Wayland
+import Woburn.Frontend.Callback
 import Woburn.Frontend.Display.Object
 import Woburn.Frontend.Registry
 import Woburn.Frontend.Types
@@ -21,8 +22,8 @@ displaySlots =
     where
         displaySync callbackCons = do
             callback <- callbackCons (\_ -> return WlCallbackSlots)
-            wlCallbackDone (signals callback) =<< curEventSerial
-            unregisterObject callback
+            serial   <- curEventSerial
+            callbackDone serial callback
 
         displayGetRegistry registryCons = do
             reg <- registryCons $ return . const registrySlots

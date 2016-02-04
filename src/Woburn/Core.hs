@@ -88,6 +88,7 @@ data Request =
 data Event =
     OutputAdded MappedOutput
   | OutputRemoved MappedOutput
+  | SurfaceFrame [SurfaceId]
   | BufferReleased Buffer
   | WindowConfigure WindowId (V2 Word32)
   | Error Error
@@ -237,22 +238,38 @@ layoutDiff new' old' = filter (`S.notMember` S.fromList old) new
 
 -- | Handles backend events.
 handleBackendEvent :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m) => B.Event -> m ()
-handleBackendEvent evt = do
+handleBackendEvent evt =
     case evt of
          B.BufferReleased buf -> clientEvent (Just $ bufClientId buf) (BufferReleased buf)
-         B.OutputAdded    out -> do
+
+         B.OutputAdded out -> do
              mOut <- state $ \s ->
                  let outs = snd . deleteOutput (outputId out) $ outputs s
                      mOut = mapOutput (outputsRight outs) out
                  in
                  (mOut, s { outputs = mOut : outs })
              clientEvent Nothing (OutputAdded mOut)
-         B.OutputRemoved  oid -> do
+             setUniverse $ U.setOutputs <$> gets outputs <*> gets universe
+
+         B.OutputRemoved oid -> do
              mOut <- state $ \s -> second (\x -> s { outputs = x}) . deleteOutput oid $ outputs s
              case mOut of
                   Nothing  -> coreError "Backend removed a non-existing output"
                   Just out -> clientEvent Nothing (OutputRemoved out)
-    setUniverse $ U.setOutputs <$> gets outputs <*> gets universe
+             setUniverse $ U.setOutputs <$> gets outputs <*> gets universe
+
+         B.OutputFrame oid -> do
+             wins <- gets (U.onOutput oid . universe)
+             cs   <- gets clients
+             mapM_
+                (\(cid, sids) -> clientEvent (Just cid) (SurfaceFrame sids))
+                (mapMaybe (mapWindowToSurfaces cs) wins)
+    where
+        -- | Maps a window to its list of surfaces.
+        mapWindowToSurfaces cs (ClientWindowId cid wid) = do
+            cd  <- M.lookup cid cs
+            win <- M.lookup wid (windows cd)
+            (,) cid . toList <$> SM.lookupSTree (winSurface win) (surfaces cd)
 
 -- | Sends a configure event for a single window.
 configureWindow :: MonadFree (CoreOutputF s) m

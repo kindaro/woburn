@@ -8,9 +8,11 @@ module Woburn.Universe
     , greedyView
     , insert
     , delete
+    , onOutput
     )
 where
 
+import Data.Foldable
 import Data.Rect
 import Data.Word
 import qualified Data.List.Zipper as Z
@@ -86,6 +88,15 @@ delete a u =
     where
         delFromScreen s = s { workspace = delFromWorkspace (workspace s) }
         delFromWorkspace w = w { windows = Z.delete a (windows w) }
+
+-- | Finds all elements that are on a specific output.
+onOutput :: OutputId -> Universe a -> [a]
+onOutput oid u =
+    case find ((oid ==) . outputId . mappedOutput . output) (screens u) of
+      Nothing     -> []
+      Just screen ->
+          toList (windows $ workspace screen)
+          ++ M.keys (M.filter (overlaps . mappedRect $ output screen) (floating u))
 
 {-
 focusDown :: Universe a -> Universe a

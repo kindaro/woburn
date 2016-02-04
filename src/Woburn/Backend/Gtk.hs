@@ -33,9 +33,12 @@ data GtkBuffer =
 
 newtype GtkSurface = GtkSurface { unGtkSurface :: IORef (Maybe GtkBuffer) }
 
+outId :: OutputId
+outId = 0
+
 mkOut :: Float -> Float -> Output
 mkOut w h =
-    Output { outputId          = 0
+    Output { outputId          = outId
            , outputMake        = "Gtk window"
            , outputModel       = "Gtk window"
            , outputCurMode     = Mode { modeWidth = round w, modeHeight = round h, modeRefresh = 60000, modePreferred = True }
@@ -142,14 +145,15 @@ gtkBackend = do
         liftIO . writeMChan evtWr . B.OutputAdded $ mkOut (fromIntegral w) (fromIntegral h)
         return True
 
-    _ <- forkIO $ readUntilClosed reqRd (reqHandler win)
+    _ <- forkIO $ readUntilClosed reqRd (reqHandler evtWr win)
 
     postGUISync $ widgetShowAll win
     return (reqWr, evtRd, createSurface)
     where
-        reqHandler win req =
+        reqHandler evtWr win req =
             case req of
               B.OutputSetMode _ _               -> error "Gtk surfaces should have only one mode"
               B.SurfaceCommit surfaces layedOut -> postGUISync $ do
                       mapM_ commitSurface surfaces
-                      maybe (return ()) (draw win) (lookup 0 layedOut)
+                      maybe (return ()) (draw win) (lookup outId layedOut)
+                      writeMChan evtWr $ B.OutputFrame outId

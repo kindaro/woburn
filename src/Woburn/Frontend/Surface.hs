@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Woburn.Frontend.Surface
     ( surfaceSlots
+    , surfaceFrame
     )
 where
 
@@ -12,6 +13,7 @@ import Graphics.Wayland
 import Linear
 import qualified Woburn.Core as C
 import Woburn.Frontend.Buffer
+import Woburn.Frontend.Callback
 import Woburn.Frontend.Display.Object
 import Woburn.Frontend.Region
 import Woburn.Frontend.Types
@@ -51,6 +53,7 @@ initialSurfaceData =
                         , fsBufferOffset    = 0
                         , fsBufferTransform = WlOutputTransformNormal
                         , fsBufferScale     = 1
+                        , fsFrameCallbacks  = []
                         }
 
 surfaceSlots :: SignalConstructor Server WlSurface Frontend
@@ -90,7 +93,9 @@ surfaceSlots surface = do
         damage x y w h = modifySurface $ \s -> s { fsDamageSurface = R.add (mkRect x y w h) (fsDamageSurface s) }
         damageBuffer x y w h = modifySurface $ \s -> s { fsDamageBuffer = R.add (mkRect x y w h) (fsDamageBuffer s) }
 
-        frame callback = undefined
+        frame callbackCons = do
+            callback <- callbackCons (\_ -> return WlCallbackSlots)
+            modifySurface $ \s -> s { fsFrameCallbacks = callback : fsFrameCallbacks s }
 
         setOpaque region = do
             reg <- lift $ gets ((region >>=) . flip M.lookup . regions)
@@ -101,10 +106,14 @@ surfaceSlots surface = do
             modifySurface $ \s -> s { fsInput = fromMaybe R.everything reg }
 
         commit = do
-            s <- lift . gets $ fmap toSurfaceState . M.lookup surface . surfaceData
-            case s of
-              Nothing -> error "Surface without surface data, should not happen"
-              Just st -> sendRequest $ C.SurfaceCommit surfaceId st
+            sData     <- lift . gets $ M.lookup surface . surfaceData
+            callbacks <- case sData of
+                           Nothing   -> error "Surface without surface data, should not happen"
+                           Just surf -> do
+                               sendRequest . C.SurfaceCommit surfaceId $ toSurfaceState surf
+                               return $ fsFrameCallbacks surf
+
+            lift . modify $ \s -> s { frameCallbacks = M.insertWith (++) surfaceId callbacks (frameCallbacks s) }
             modifySurface nextSurfaceData
 
         setBufferTransform t' =
@@ -116,3 +125,19 @@ surfaceSlots surface = do
             if scale > 0
               then modifySurface $ \s -> s { fsBufferScale = scale }
               else displayError surface WlSurfaceErrorInvalidScale "Invalid buffer scale"
+
+-- | Sends frame callbacks to all the given surfaces.
+surfaceFrame :: [SurfaceId] -> Frontend ()
+surfaceFrame sids = do
+    ts <- getTimestamp
+    mapM_ (f ts) sids
+    where
+        f ts sid = do
+            callbacks <-
+                fmap (fromMaybe [])
+                . lift
+                . state
+                $ \s -> ( M.lookup sid (frameCallbacks s)
+                        , s { frameCallbacks = M.delete sid (frameCallbacks s) }
+                        )
+            mapM_ (callbackDone ts) (reverse callbacks)

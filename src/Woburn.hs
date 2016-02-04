@@ -18,6 +18,7 @@ import Control.Monad.Reader
 import Control.Monad.State
 import Data.Maybe
 import Data.Tuple
+import Data.Time.Clock.POSIX
 import Data.Word
 import qualified Data.Map as M
 import qualified Data.Set.Diet as D
@@ -84,6 +85,7 @@ runClient munmapFinalizer finalizerData cid sock rEvt wReq = do
         interpretFrontend (SendMessage msg a       ) = send sock msg >> return a
         interpretFrontend (SendRequest req a       ) = writeMChan wReq req >> return a
         interpretFrontend (GetClientId f           ) = return $ f cid
+        interpretFrontend (GetTimestamp f          ) = (f . round . (* 1000)) <$> getPOSIXTime
         interpretFrontend (MapMemory (Fd fd) size f) = do
             let cSize = fromIntegral size
             ptr <- c'mmap nullPtr cSize c'PROT_READ c'MAP_SHARED fd 0

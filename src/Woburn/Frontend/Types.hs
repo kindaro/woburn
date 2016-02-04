@@ -12,6 +12,7 @@ module Woburn.Frontend.Types
     , sendRequest
     , mapMemory
     , getClientId
+    , getTimestamp
     , GlobalCons (..)
     , GlobalId (..)
     , initialFrontendState
@@ -36,12 +37,14 @@ import qualified Woburn.Core as C
 import Woburn.Buffer
 import Woburn.Output
 import Woburn.Protocol
+import Woburn.Surface
 import Woburn.Types
 
 data FrontendF a =
     SendMessage Message a
   | SendRequest C.Request a
   | GetClientId (ClientId -> a)
+  | GetTimestamp (Word32 -> a)
   | MapMemory Fd Int32 (Maybe (ForeignPtr Word8) -> a)
   deriving (Functor)
 
@@ -56,6 +59,9 @@ sendRequest req = lift . liftF $ SendRequest req ()
 
 getClientId :: Frontend ClientId
 getClientId = lift . liftF $ GetClientId id
+
+getTimestamp :: Frontend Word32
+getTimestamp = lift . liftF $ GetTimestamp id
 
 mapMemory :: Fd -> Int32 -> Frontend (Maybe (ForeignPtr Word8))
 mapMemory fd size = lift . liftF $ MapMemory fd size id
@@ -75,18 +81,20 @@ data FrontendSurfaceData =
                         , fsBufferOffset    :: V2 Int32
                         , fsBufferTransform :: WlOutputTransform
                         , fsBufferScale     :: Int32
+                        , fsFrameCallbacks  :: [SObject WlCallback]
                         }
 
 data FrontendState =
-    FrontendState { registries   :: S.Set (SObject WlRegistry)
-                  , globals      :: M.Map GlobalId GlobalCons
-                  , globalIds    :: D.Diet GlobalId
-                  , regions      :: M.Map (SObject WlRegion) (Region Int32)
-                  , eventSerial  :: Word32
-                  , surfaceData  :: M.Map (SObject WlSurface) FrontendSurfaceData
-                  , buffers      :: M.Map (SObject WlBuffer) Buffer
-                  , bufRefCounts :: M.Map Buffer (Int, SObject WlBuffer)
-                  , outputs      :: M.Map OutputId (GlobalId, [SObject WlOutput])
+    FrontendState { registries     :: S.Set (SObject WlRegistry)
+                  , globals        :: M.Map GlobalId GlobalCons
+                  , globalIds      :: D.Diet GlobalId
+                  , regions        :: M.Map (SObject WlRegion) (Region Int32)
+                  , eventSerial    :: Word32
+                  , surfaceData    :: M.Map (SObject WlSurface) FrontendSurfaceData
+                  , buffers        :: M.Map (SObject WlBuffer) Buffer
+                  , bufRefCounts   :: M.Map Buffer (Int, SObject WlBuffer)
+                  , outputs        :: M.Map OutputId (GlobalId, [SObject WlOutput])
+                  , frameCallbacks :: M.Map SurfaceId [SObject WlCallback]
                   }
 
 -- | The type of the frontend computations.
@@ -107,13 +115,14 @@ curEventSerial = lift $ gets eventSerial
 
 initialFrontendState :: FrontendState
 initialFrontendState =
-    FrontendState { registries   = S.empty
-                  , globals      = M.empty
-                  , globalIds    = D.singletonI $ D.Interval minBound maxBound
-                  , regions      = M.empty
-                  , eventSerial  = 0
-                  , surfaceData  = M.empty
-                  , buffers      = M.empty
-                  , bufRefCounts = M.empty
-                  , outputs      = M.empty
+    FrontendState { registries     = S.empty
+                  , globals        = M.empty
+                  , globalIds      = D.singletonI $ D.Interval minBound maxBound
+                  , regions        = M.empty
+                  , eventSerial    = 0
+                  , surfaceData    = M.empty
+                  , buffers        = M.empty
+                  , bufRefCounts   = M.empty
+                  , outputs        = M.empty
+                  , frameCallbacks = M.empty
                   }

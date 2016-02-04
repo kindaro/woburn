@@ -70,7 +70,8 @@ executable woburn
                        gtk >= 0.13,
                        free >= 4.12,
                        filepath,
-                       bindings-posix
+                       bindings-posix,
+                       time
   hs-source-dirs:      src
   default-language:    Haskell2010
   ghc-options:         -Wall -threaded -rtsopts
@@ -118,4 +119,5 @@ test-suite test
                        free >= 4.12,
                        filepath,
                        bindings-posix,
+                       time,
                        QuickCheck

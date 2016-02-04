@@ -81,6 +81,7 @@ test-suite test
   type:                exitcode-stdio-1.0
   other-modules:       Test.Arbitrary
                        Test.MChan
+                       Test.Rect
                        Test.Region
                        Test.STree
                        Test.SurfaceMap

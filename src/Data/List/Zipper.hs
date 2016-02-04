@@ -13,11 +13,16 @@ module Data.List.Zipper
     )
 where
 
+import Data.Monoid
+
 -- | A list zipper.
 data Zipper a = Zipper [a] [a]
 
 instance Functor Zipper where
     fmap f (Zipper ls rs) = Zipper (map f ls) (map f rs)
+
+instance Foldable Zipper where
+    foldMap f (Zipper a b) = foldMap f a <> foldMap f b
 
 -- | Returns the zipper of an empty list.
 empty :: Zipper a

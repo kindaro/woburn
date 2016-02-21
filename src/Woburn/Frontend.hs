@@ -15,6 +15,7 @@ import Woburn.Frontend.Display
 import Woburn.Frontend.Output
 import Woburn.Frontend.Registry
 import Woburn.Frontend.Shm
+import Woburn.Frontend.Subcompositor
 import Woburn.Frontend.Surface
 import Woburn.Frontend.Types
 
@@ -44,4 +45,5 @@ initFrontend :: Frontend ()
 initFrontend = do
     registerObject display displaySlots
     void $ addGlobal compositorSlots
+    void $ addGlobal subcompositorSlots
     void . addGlobal $ shmSlots [WlShmFormatArgb8888, WlShmFormatXrgb8888]

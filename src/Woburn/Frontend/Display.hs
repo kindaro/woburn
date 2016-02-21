@@ -6,12 +6,12 @@ module Woburn.Frontend.Display
 where
 
 import Control.Monad.State
-import qualified Data.Set as S
 import Graphics.Wayland
 import Woburn.Frontend.Callback
 import Woburn.Frontend.Display.Object
 import Woburn.Frontend.Registry
 import Woburn.Frontend.Types
+import Woburn.Frontend.Types.Global
 import Woburn.Protocol
 
 displaySlots :: Slots Server WlDisplay Frontend
@@ -27,5 +27,5 @@ displaySlots =
 
         displayGetRegistry registryCons = do
             reg <- registryCons $ return . const registrySlots
-            lift $ modify (\s -> s { registries = S.insert reg (registries s) })
+            lift $ modify (\s -> s { fsGlobals = insertRegistry reg (fsGlobals s) })
             announceGlobals reg

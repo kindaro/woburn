@@ -2,6 +2,7 @@
 module Woburn.Frontend.Surface
     ( surfaceSlots
     , surfaceFrame
+    , surfaceToId
     )
 where
 
@@ -16,50 +17,32 @@ import Woburn.Frontend.Buffer
 import Woburn.Frontend.Callback
 import Woburn.Frontend.Display.Object
 import Woburn.Frontend.Region
+import Woburn.Frontend.Subsurface
 import Woburn.Frontend.Types
+import Woburn.Frontend.Types.Surface
 import Woburn.Protocol
 import Woburn.Surface
 
-nextSurfaceData :: FrontendSurfaceData -> FrontendSurfaceData
-nextSurfaceData fs =
-    fs { fsDamageSurface = R.empty
-       , fsDamageBuffer  = R.empty
-       , fsBuffer        = Nothing
-       }
-
-toSurfaceState :: FrontendSurfaceData -> SurfaceState
-toSurfaceState fs =
-    SurfaceState { surfBuffer       = fsBuffer fs
-                 , surfBufferOffset = fsBufferOffset fs
-                 , surfBufferScale  = fsBufferScale fs
+toSurfaceState :: SurfaceData -> SurfaceState
+toSurfaceState sd =
+    SurfaceState { surfBuffer       = sdBuffer sd
+                 , surfBufferOffset = sdBufferOffset sd
+                 , surfBufferScale  = sdBufferScale sd
                  , surfDamage       = combinedDamage
-                 , surfOpaque       = fsOpaque fs
-                 , surfInput        = fsInput fs
-                 , surfTransform    = fsBufferTransform fs
+                 , surfOpaque       = sdOpaque sd
+                 , surfInput        = sdInput sd
+                 , surfTransform    = sdBufferTransform sd
                  }
     where
         combinedDamage =
-            fsDamageBuffer fs
+            sdDamageBuffer sd
             `R.union`
-            R.scale (fsBufferScale fs) (R.offset (- fsBufferOffset fs) (fsDamageSurface fs))
-
-initialSurfaceData :: FrontendSurfaceData
-initialSurfaceData =
-    FrontendSurfaceData { fsDamageSurface   = R.empty
-                        , fsDamageBuffer    = R.empty
-                        , fsOpaque          = R.empty
-                        , fsInput           = R.everything
-                        , fsBuffer          = Nothing
-                        , fsBufferOffset    = 0
-                        , fsBufferTransform = WlOutputTransformNormal
-                        , fsBufferScale     = 1
-                        , fsFrameCallbacks  = []
-                        }
+            R.scale (sdBufferScale sd) (R.offset (- sdBufferOffset sd) (sdDamageSurface sd))
 
 surfaceSlots :: SignalConstructor Server WlSurface Frontend
 surfaceSlots surface = do
     sendRequest $ C.SurfaceCreate surfaceId
-    lift . modify $ \s -> s { surfaceData = M.insert surface initialSurfaceData (surfaceData s) }
+    lift . modify $ \s -> s { fsSurfaces = insertSurface surface initialSurfaceData (fsSurfaces s) }
     return
         WlSurfaceSlots { wlSurfaceDestroy            = destroy
                        , wlSurfaceAttach             = attach
@@ -73,57 +56,59 @@ surfaceSlots surface = do
                        , wlSurfaceDamageBuffer       = damageBuffer
                        }
     where
-        surfaceId = fromIntegral . unObjId . unObject $ surface
+        surfaceId = surfaceToId surface
 
-        modifySurface f = lift . modify $ \s -> s { surfaceData = M.adjust f surface (surfaceData s) }
+        modifySurface f = lift . modify $ \s -> s { fsSurfaces = adjustSurface f surface (fsSurfaces s) }
 
         destroy = do
             sendRequest $ C.SurfaceDestroy surfaceId
-            lift . modify $ \s -> s { surfaceData = M.delete surface (surfaceData s) }
+            subsurface <- lift $ gets ((>>= sdSubsurface) . lookupSurface surface . fsSurfaces)
+            lift . modify $ \s -> s { fsSurfaces = deleteSurface surface (fsSurfaces s) }
             destroyClientObject surface
+            maybe (return ()) makeSubsurfaceInert subsurface
 
         attach mBufObj x y = do
             buf <- case mBufObj of
                      Nothing     -> return Nothing
                      Just bufObj -> Just <$> acquireBuffer bufObj
-            modifySurface $ \s -> s { fsBuffer       = buf
-                                    , fsBufferOffset = V2 x y + fsBufferOffset s
+            modifySurface $ \s -> s { sdBuffer       = buf
+                                    , sdBufferOffset = V2 x y + sdBufferOffset s
                                     }
 
-        damage x y w h = modifySurface $ \s -> s { fsDamageSurface = R.add (mkRect x y w h) (fsDamageSurface s) }
-        damageBuffer x y w h = modifySurface $ \s -> s { fsDamageBuffer = R.add (mkRect x y w h) (fsDamageBuffer s) }
+        damage x y w h = modifySurface $ \s -> s { sdDamageSurface = R.add (mkRect x y w h) (sdDamageSurface s) }
+        damageBuffer x y w h = modifySurface $ \s -> s { sdDamageBuffer = R.add (mkRect x y w h) (sdDamageBuffer s) }
 
         frame callbackCons = do
             callback <- callbackCons (\_ -> return WlCallbackSlots)
-            modifySurface $ \s -> s { fsFrameCallbacks = callback : fsFrameCallbacks s }
+            modifySurface $ \s -> s { sdFrameCallbacks = callback : sdFrameCallbacks s }
 
         setOpaque region = do
-            reg <- lift $ gets ((region >>=) . flip M.lookup . regions)
-            modifySurface $ \s -> s { fsOpaque = fromMaybe R.everything reg }
+            reg <- lift $ gets ((region >>=) . flip M.lookup . fsRegions)
+            modifySurface $ \s -> s { sdOpaque = fromMaybe R.everything reg }
 
         setInput region = do
-            reg <- lift $ gets ((region >>=) . flip M.lookup . regions)
-            modifySurface $ \s -> s { fsInput = fromMaybe R.everything reg }
+            reg <- lift $ gets ((region >>=) . flip M.lookup . fsRegions)
+            modifySurface $ \s -> s { sdInput = fromMaybe R.everything reg }
 
         commit = do
-            sData     <- lift . gets $ M.lookup surface . surfaceData
-            callbacks <- case sData of
-                           Nothing   -> error "Surface without surface data, should not happen"
-                           Just surf -> do
-                               sendRequest . C.SurfaceCommit surfaceId $ toSurfaceState surf
-                               return $ fsFrameCallbacks surf
+            sData <- lift . gets $ lookupSurface surface . fsSurfaces
+            cbs   <- case sData of
+                       Nothing   -> error "Surface without surface data, should not happen"
+                       Just surf -> do
+                           sendRequest . C.SurfaceCommit surfaceId $ toSurfaceState surf
+                           return $ sdFrameCallbacks surf
 
-            lift . modify $ \s -> s { frameCallbacks = M.insertWith (++) surfaceId callbacks (frameCallbacks s) }
+            lift . modify $ \s -> s { fsSurfaces = insertCallbacks surfaceId cbs (fsSurfaces s) }
             modifySurface nextSurfaceData
 
         setBufferTransform t' =
             case fromInt32 t' of
               Nothing -> displayError surface WlSurfaceErrorInvalidTransform "Invalid buffer transform"
-              Just t  -> modifySurface $ \s -> s { fsBufferTransform = t }
+              Just t  -> modifySurface $ \s -> s { sdBufferTransform = t }
 
         setBufferScale scale =
             if scale > 0
-              then modifySurface $ \s -> s { fsBufferScale = scale }
+              then modifySurface $ \s -> s { sdBufferScale = scale }
               else displayError surface WlSurfaceErrorInvalidScale "Invalid buffer scale"
 
 -- | Sends frame callbacks to all the given surfaces.
@@ -133,11 +118,8 @@ surfaceFrame sids = do
     mapM_ (f ts) sids
     where
         f ts sid = do
-            callbacks <-
-                fmap (fromMaybe [])
-                . lift
-                . state
-                $ \s -> ( M.lookup sid (frameCallbacks s)
-                        , s { frameCallbacks = M.delete sid (frameCallbacks s) }
-                        )
-            mapM_ (callbackDone ts) (reverse callbacks)
+            cbs <- lift . state $ \s ->
+                ( lookupCallbacks sid (fsSurfaces s)
+                , s { fsSurfaces = deleteCallbacks sid (fsSurfaces s) }
+                )
+            mapM_ (callbackDone ts) (reverse cbs)

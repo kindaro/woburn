@@ -14,44 +14,40 @@ import Control.Monad
 import Control.Monad.Except
 import Control.Monad.State
 import qualified Data.Map as M
-import qualified Data.Set.Diet as D
 import Data.Word
 import Graphics.Wayland
 import Woburn.Frontend.Types
+import Woburn.Frontend.Types.Global as G
 import Woburn.Protocol
 
 -- | Announces a single global to a registry object.
-announceGlobal :: SObject WlRegistry -> GlobalId -> GlobalCons -> Frontend ()
+announceGlobal :: SObject WlRegistry -> GlobalId -> GlobalCons Frontend -> Frontend ()
 announceGlobal reg globalId (GlobalCons cons) =
     wlRegistryGlobal (signals reg) globalId (consName cons) (consVer cons)
 
 -- | Announces all the currently added globals to a registry object.
 announceGlobals :: SObject WlRegistry -> Frontend ()
 announceGlobals reg =
-    lift (gets globals) >>= mapM_ (uncurry (announceGlobal reg)) . M.toList
+    lift (gets (M.toList . globals . fsGlobals)) >>= mapM_ (uncurry (announceGlobal reg))
 
 -- | Adds a new global object and sends an announcement to all registry objects.
 addGlobal :: (DispatchInterface i, Dispatchable Server i) => SignalConstructor Server i Frontend -> Frontend GlobalId
 addGlobal cons = do
-    let globalCons = GlobalCons cons
-
-    mgid <- lift . state $ \s ->
-        case D.minView (globalIds s) of
-          Nothing      -> (throwError $ ErrUser "out of global IDs", s)
-          Just (a, gs) -> (return a, s { globalIds = gs, globals = M.insert a globalCons (globals s) })
-
-    gid <- mgid
-    mapM_ (\r -> announceGlobal r gid globalCons) =<< lift (gets registries)
-    return gid
+    res <- G.insert globalCons <$> lift (gets fsGlobals)
+    case res of
+      Nothing        -> throwError $ ErrUser "out of global IDs"
+      Just (gid, gs) -> do
+          lift . modify $ \s -> s { fsGlobals = gs }
+          mapM_ (\r -> announceGlobal r gid globalCons) =<< lift (gets (registries . fsGlobals))
+          return gid
+    where
+        globalCons = GlobalCons cons
 
 -- | Deletes a global object and sends an announcement to all registry objects.
 delGlobal :: GlobalId -> Frontend ()
 delGlobal gid = do
-    lift . modify $ \s ->
-        s { globalIds = D.insert gid (globalIds s)
-          , globals   = M.delete gid (globals s)
-          }
-    mapM_ (\r -> wlRegistryGlobalRemove (signals r) gid) =<< lift (gets registries)
+    lift . modify $ \s -> s { fsGlobals = G.delete gid (fsGlobals s) }
+    mapM_ (\r -> wlRegistryGlobalRemove (signals r) gid) =<< lift (gets (registries . fsGlobals))
 
 -- | Replaces the constructor for a global object.
 replaceGlobal :: (DispatchInterface i, Dispatchable Server i)
@@ -59,7 +55,7 @@ replaceGlobal :: (DispatchInterface i, Dispatchable Server i)
               -> SignalConstructor Server i Frontend
               -> Frontend ()
 replaceGlobal gid cons =
-    lift . modify $ \s -> s { globals = M.insert gid (GlobalCons cons) (globals s) }
+    lift . modify $ \s -> s { fsGlobals = G.replace gid (GlobalCons cons) (fsGlobals s) }
 
 -- | Returns 'Slots' for the 'WlRegistry' object.
 registrySlots :: Slots Server WlRegistry Frontend
@@ -69,7 +65,7 @@ registrySlots = WlRegistrySlots { wlRegistryBind = registryBind }
                      -> (forall i. (DispatchInterface i, Dispatchable Server i) => SlotConstructor Server i Frontend)
                      -> Frontend ()
         registryBind globalId cons = do
-            gs <- M.lookup (GlobalId globalId) <$> lift (gets globals)
+            gs <- G.lookup (GlobalId globalId) <$> lift (gets fsGlobals)
             case gs of
               Just (GlobalCons slots) -> void (cons slots)
               Nothing                 -> protocolError (fromIntegral globalId) "Unknown global object"

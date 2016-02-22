@@ -350,14 +350,21 @@ handleCoreRequest cid req =
 
         checkError err m = m >>= (`unless` clientEvent (Just cid) (Error err))
 
+announceOutputs :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m) => ClientId -> m ()
+announceOutputs cid = do
+    os <- gets outputs
+    mapM_ (clientEvent (Just cid) . OutputAdded) os
+
 -- | Handles the various core inputs.
 handleInput :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m) => CoreInput s -> m ()
 handleInput input =
     case input of
          BackendEvent  evt     -> handleBackendEvent evt
          ClientRequest cid req -> handleCoreRequest cid req
-         ClientAdd     cid     -> modify (\s -> s { clients = M.insert cid newClientData (clients s) })
          ClientDel     cid     -> modify (\s -> s { clients = M.delete cid (clients s) })
+         ClientAdd     cid     -> do
+             modify (\s -> s { clients = M.insert cid newClientData (clients s) })
+             announceOutputs cid
     where
         newClientData = ClientData SM.empty M.empty
 

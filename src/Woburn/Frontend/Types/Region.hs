@@ -8,7 +8,7 @@ import Data.Int
 import Data.Region
 import qualified Data.Map as M
 import Graphics.Wayland
-import Woburn.Protocol
+import Woburn.Protocol.Core
 
 type RegionsData = M.Map (SObject WlRegion) (Region Int32)
 

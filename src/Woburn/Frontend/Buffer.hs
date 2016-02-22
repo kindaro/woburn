@@ -12,7 +12,7 @@ import Woburn.Buffer
 import Woburn.Frontend.Display.Object
 import Woburn.Frontend.Types
 import Woburn.Frontend.Types.Buffer as B
-import Woburn.Protocol
+import Woburn.Protocol.Core
 
 stateB :: (BuffersData -> (a, BuffersData)) -> Frontend a
 stateB f = lift . state $ \s -> second (\bd -> s { fsBuffers = bd }) (f (fsBuffers s))

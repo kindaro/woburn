@@ -8,7 +8,7 @@ where
 import Data.Word
 import Foreign.ForeignPtr
 import Foreign.Ptr
-import Woburn.Protocol
+import Woburn.Protocol.Core
 import Woburn.Types
 
 data Buffer =

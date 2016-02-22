@@ -14,7 +14,7 @@ import Data.STree
 import qualified Data.STree.Zipper as Z
 import Linear
 import Prelude hiding (foldr)
-import Woburn.Protocol
+import Woburn.Protocol.Core
 import Woburn.Surface
 import qualified Woburn.Surface.Map as SM
 import Test.Arbitrary ()

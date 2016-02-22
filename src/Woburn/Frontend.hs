@@ -8,7 +8,7 @@ where
 import Control.Monad.Except
 import Graphics.Wayland
 import qualified Woburn.Core as C
-import Woburn.Protocol
+import Woburn.Protocol.Core
 import Woburn.Frontend.Buffer
 import Woburn.Frontend.Compositor
 import Woburn.Frontend.Display

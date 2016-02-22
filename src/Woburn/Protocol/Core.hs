@@ -3,7 +3,7 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
-module Woburn.Protocol
+module Woburn.Protocol.Core
 where
 
 import Graphics.Wayland

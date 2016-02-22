@@ -12,7 +12,7 @@ import Data.Rect
 import Graphics.Wayland
 import Linear
 import Woburn.Output
-import Woburn.Protocol
+import Woburn.Protocol.Core
 import Woburn.Frontend.Registry
 import Woburn.Frontend.Types
 import Woburn.Frontend.Types.Output as O

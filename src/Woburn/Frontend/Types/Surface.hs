@@ -22,7 +22,7 @@ import qualified Data.Map as M
 import Graphics.Wayland
 import Linear
 import Woburn.Buffer
-import Woburn.Protocol
+import Woburn.Protocol.Core
 import Woburn.Surface
 
 -- | Convert from a 'WlSurface' object to its 'SurfaceId'.

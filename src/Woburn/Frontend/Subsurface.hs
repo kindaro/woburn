@@ -12,7 +12,7 @@ import qualified Woburn.Core as C
 import Woburn.Frontend.Display.Object
 import Woburn.Frontend.Types
 import Woburn.Frontend.Types.Surface
-import Woburn.Protocol
+import Woburn.Protocol.Core
 
 
 subsurfaceSlots :: SObject WlSurface -> SignalConstructor Server WlSubsurface Frontend

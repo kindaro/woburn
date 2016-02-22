@@ -21,7 +21,7 @@ import qualified Data.Set as S
 import qualified Data.Set.Diet as D
 import Graphics.Wayland
 import Prelude hiding (lookup)
-import Woburn.Protocol
+import Woburn.Protocol.Core
 
 data GlobalCons m =
     forall i . (DispatchInterface i, Dispatchable Server i) => GlobalCons (SignalConstructor Server i m)

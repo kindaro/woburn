@@ -8,7 +8,7 @@ where
 
 import Graphics.Wayland
 import Woburn.Frontend.Types
-import Woburn.Protocol
+import Woburn.Protocol.Core
 
 -- | The global display object.
 display :: SObject WlDisplay

@@ -18,7 +18,7 @@ import Data.Word
 import Graphics.Wayland
 import Woburn.Frontend.Types
 import Woburn.Frontend.Types.Global as G
-import Woburn.Protocol
+import Woburn.Protocol.Core
 
 -- | Announces a single global to a registry object.
 announceGlobal :: SObject WlRegistry -> GlobalId -> GlobalCons Frontend -> Frontend ()

@@ -12,7 +12,7 @@ import Control.Arrow
 import qualified Data.Map as M
 import Graphics.Wayland
 import Woburn.Buffer
-import Woburn.Protocol
+import Woburn.Protocol.Core
 
 data BuffersData =
     BuffersData { buffers   :: M.Map (SObject WlBuffer) Buffer

@@ -14,7 +14,7 @@ import Linear
 import Graphics.Wayland
 import Woburn.Frontend.Display.Object
 import Woburn.Frontend.Types
-import Woburn.Protocol
+import Woburn.Protocol.Core
 
 mkRect :: Int32 -> Int32 -> Int32 -> Int32 -> R.Rect Int32
 mkRect x y w h = R.Rect (V2 x y) (V2 (x + w - 1) (y + h - 1))

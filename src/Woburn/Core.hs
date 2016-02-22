@@ -46,7 +46,7 @@ import qualified Woburn.Backend as B
 import Woburn.Buffer
 import Woburn.Layout
 import Woburn.Output
-import Woburn.Protocol
+import Woburn.Protocol.Core
 import Woburn.Surface
 import qualified Woburn.Surface.Map as SM
 import Woburn.Window

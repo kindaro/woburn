@@ -12,7 +12,7 @@ import Woburn.Buffer
 import Woburn.Frontend.Buffer
 import Woburn.Frontend.Display.Object
 import Woburn.Frontend.Types
-import Woburn.Protocol
+import Woburn.Protocol.Core
 
 shmPoolCons :: [WlShmFormat] -> Fd -> Int32 -> SignalConstructor Server WlShmPool Frontend
 shmPoolCons fmts fd size pool = do

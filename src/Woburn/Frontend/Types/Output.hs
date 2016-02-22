@@ -8,7 +8,7 @@ import qualified Data.Map as M
 import Graphics.Wayland
 import Woburn.Frontend.Types.Global
 import Woburn.Output
-import Woburn.Protocol
+import Woburn.Protocol.Core
 
 type OutputsData = M.Map OutputId (GlobalId, [SObject WlOutput])
 

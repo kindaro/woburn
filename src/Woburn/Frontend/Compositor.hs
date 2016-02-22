@@ -8,7 +8,7 @@ import Graphics.Wayland
 import Woburn.Frontend.Region
 import Woburn.Frontend.Surface
 import Woburn.Frontend.Types
-import Woburn.Protocol
+import Woburn.Protocol.Core
 
 compositorSlots :: SignalConstructor Server WlCompositor Frontend
 compositorSlots _ =

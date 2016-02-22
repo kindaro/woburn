@@ -20,7 +20,7 @@ import Woburn.Frontend.Region
 import Woburn.Frontend.Subsurface
 import Woburn.Frontend.Types
 import Woburn.Frontend.Types.Surface
-import Woburn.Protocol
+import Woburn.Protocol.Core
 import Woburn.Surface
 
 toSurfaceState :: SurfaceData -> SurfaceState

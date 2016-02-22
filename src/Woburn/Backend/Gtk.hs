@@ -18,7 +18,7 @@ import Graphics.UI.Gtk.Gdk.GC
 import Linear
 import Woburn.Buffer
 import Woburn.Output
-import Woburn.Protocol
+import Woburn.Protocol.Core
 import Woburn.Surface
 import qualified Woburn.Backend as B
 

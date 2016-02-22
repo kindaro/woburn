@@ -12,7 +12,7 @@ import Woburn.Frontend.Display.Object
 import Woburn.Frontend.Registry
 import Woburn.Frontend.Types
 import Woburn.Frontend.Types.Global
-import Woburn.Protocol
+import Woburn.Protocol.Core
 
 displaySlots :: Slots Server WlDisplay Frontend
 displaySlots =

@@ -9,7 +9,7 @@ import Woburn.Frontend.Display.Object
 import Woburn.Frontend.Surface
 import Woburn.Frontend.Subsurface
 import Woburn.Frontend.Types
-import Woburn.Protocol
+import Woburn.Protocol.Core
 
 subcompositorSlots :: SignalConstructor Server WlSubcompositor Frontend
 subcompositorSlots subComp =

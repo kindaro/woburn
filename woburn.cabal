@@ -37,7 +37,7 @@ executable woburn
                        Woburn.Layout
                        Woburn.Output
                        Woburn.Path
-                       Woburn.Protocol
+                       Woburn.Protocol.Core
                        Woburn.Surface
                        Woburn.Surface.Map
                        Woburn.Surface.Tree

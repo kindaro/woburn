@@ -9,7 +9,7 @@ where
 
 import Data.Rect
 import Data.Word
-import Woburn.Protocol
+import Woburn.Protocol.Core
 
 data Mode =
     Mode { modeWidth     :: Word32 -- ^ Width in hardware units.

@@ -18,6 +18,8 @@ import Woburn.Frontend.Shm
 import Woburn.Frontend.Subcompositor
 import Woburn.Frontend.Surface
 import Woburn.Frontend.Types
+import Woburn.Frontend.XdgShell
+import Woburn.Frontend.XdgSurface
 
 -- | Handles an incoming message, sending a signal through the display object
 -- if there is a protocol error.
@@ -38,7 +40,7 @@ handleEvent evt =
       C.OutputAdded     out      -> addOutput out
       C.OutputRemoved   out      -> removeOutput out
       C.SurfaceFrame    surfs    -> surfaceFrame surfs
-      C.WindowConfigure wid size -> undefined
+      C.WindowConfigure wid size -> updateSize wid size
       C.Error           err      -> undefined
 
 initFrontend :: Frontend ()
@@ -46,4 +48,5 @@ initFrontend = do
     registerObject display displaySlots
     void $ addGlobal compositorSlots
     void $ addGlobal subcompositorSlots
+    void $ addGlobal xdgShellSlots
     void . addGlobal $ shmSlots [WlShmFormatArgb8888, WlShmFormatXrgb8888]

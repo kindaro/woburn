@@ -38,6 +38,7 @@ executable woburn
                        Woburn.Output
                        Woburn.Path
                        Woburn.Protocol.Core
+                       Woburn.Protocol.XdgShell
                        Woburn.Surface
                        Woburn.Surface.Map
                        Woburn.Surface.Tree

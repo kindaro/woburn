@@ -1,5 +1,6 @@
 module Woburn.Path
     ( waylandXmlPath
+    , xmlPath
     )
 where
 

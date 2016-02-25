@@ -64,11 +64,19 @@ runClient munmapFinalizer finalizerData cid sock chan reqWr = do
 
     (`evalStateT` (iMgr, iFs)) . forever  $ do
         (mgr, fs) <- get
-        sa        <- liftIO . async $ recv (messageLookup mgr) sock >>= writeChan chan . Left
-        liftIO $ link sa
-
+        sa        <- liftIO . async . mask_ $ recv (messageLookup mgr) sock >>= writeChan chan . Left
         m         <- liftIO $ readChan chan
+
+        -- Cancel, and check for bad exceptions from 'recv'.
         liftIO $ cancel sa
+        saRes <- liftIO $ waitCatch sa
+
+        case saRes of
+          Left err
+            | asyncExceptionFromException err == Just ThreadKilled -> return ()
+            | otherwise                                            -> liftIO $ throwIO err
+          _ -> return ()
+
         liftIO $ putStrLn ("<< " ++ show m)
 
         let f = case m of

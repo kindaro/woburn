@@ -19,12 +19,10 @@ import Control.Monad.State
 import Data.Maybe
 import Data.Tuple
 import Data.Time.Clock.POSIX
-import Data.Word
 import qualified Data.Map as M
 import qualified Data.Set.Diet as D
-import Foreign.ForeignPtr
+import Foreign.Concurrent
 import Foreign.Ptr
-import Foreign.C.Types
 import Graphics.Wayland hiding (Event, Request)
 import System.IO
 import System.Posix.Types
@@ -34,32 +32,13 @@ import Woburn.Frontend
 import Woburn.Frontend.Types
 import Woburn.Types
 
-foreign import ccall"wrapper"
-    wrapMunmapFinalizer :: (Ptr Word8 -> IO ()) -> IO (FinalizerPtr Word8)
-
--- | Creates a finalizer that calls munmap.
-makeMunmapFinalizer :: IO (FinalizerPtr Word8, MVar (M.Map (Ptr Word8) CSize))
-makeMunmapFinalizer = do
-    mvar      <- newMVar M.empty
-    finalizer <- wrapMunmapFinalizer (helper mvar)
-    return (finalizer, mvar)
-    where
-        helper :: MVar (M.Map (Ptr Word8) CSize) -> Ptr Word8 -> IO ()
-        helper mvar ptr = do
-            msize <- withMVar mvar (return . M.lookup ptr)
-            case msize of
-              Nothing   -> error "Trying to finalize an mmaped ptr, but can't find its size"
-              Just size -> void $ c'munmap (castPtr ptr) size
-
 -- | Runs a single client.
-runClient :: FinalizerPtr Word8             -- ^ A finalizer for mmap'ed memory
-          -> MVar (M.Map (Ptr Word8) CSize) -- ^ Data used by the mmap finalizer
-          -> ClientId                       -- ^ The client ID of this client.
+runClient :: ClientId                       -- ^ The client ID of this client.
           -> Socket                         -- ^ The client socket.
           -> Chan (Either Message Event)    -- ^ The channel new events will arrive on.
           -> WMChan (CoreInput s)           -- ^ The channel core requests are sent on.
           -> IO ()
-runClient munmapFinalizer finalizerData cid sock chan reqWr = do
+runClient cid sock chan reqWr = do
     ((_, iMgr), iFs) <- foldF interpretFrontend (runFrontend initFrontend newObjectManager initialFrontendState)
 
     (`evalStateT` (iMgr, iFs)) . forever  $ do
@@ -106,24 +85,19 @@ runClient munmapFinalizer finalizerData cid sock chan reqWr = do
             ptr <- c'mmap nullPtr cSize c'PROT_READ c'MAP_SHARED fd 0
             if ptr == c'MAP_FAILED
               then return $ f Nothing
-              else do
-                  let wordPtr = castPtr ptr
-                  modifyMVar_ finalizerData (return . M.insert wordPtr cSize)
-                  f . Just <$> newForeignPtr munmapFinalizer wordPtr
+              else f . Just <$> newForeignPtr (castPtr ptr) (void $ c'munmap ptr cSize)
 
 -- | Logs any 'WError's to stderr.
 logError :: Either ObjectError () -> IO ()
 logError = either (hPrint stderr) return
 
 -- | Waits for incoming client connections, and spins of new threads to run them.
-waitForClients :: FinalizerPtr Word8                                  -- ^ A finalizer that calls munmap.
-               -> MVar (M.Map (Ptr Word8) CSize)                      -- ^ Data used by the finalizer.
-               -> MVar (D.Diet ClientId)                              -- ^ A set of free 'ClientId's
+waitForClients :: MVar (D.Diet ClientId)                              -- ^ A set of free 'ClientId's
                -> MVar (M.Map ClientId (Chan (Either Message Event))) -- ^ A map of client's event channels.
                -> WMChan (CoreInput s)                                -- ^ The channel core requests are sent on.
                -> Socket                                              -- ^ The socket to listen on.
                -> IO ()
-waitForClients munmapFinalizer finalizerData clientIds clientsVar wChan socket = forever $ do
+waitForClients clientIds clientsVar wChan socket = forever $ do
     clientSocket <- accept socket
     cid          <- modifyMVar clientIds (return . swap . fromMaybe (error "Ran out of client IDs") . D.minView)
     evtChan      <- newChan
@@ -133,7 +107,7 @@ waitForClients munmapFinalizer finalizerData clientIds clientsVar wChan socket =
 
     void .
         forkIO $
-        runClient munmapFinalizer finalizerData cid clientSocket evtChan wChan
+        runClient cid clientSocket evtChan wChan
         `finally`
         finalizer cid clientSocket
 
@@ -169,10 +143,9 @@ run path = do
     (bReqWr, bEvtRd, surfGet)  <- gtkBackend
     clientIds                  <- newMVar . D.singletonI $ D.Interval minBound maxBound
     clientsVar                 <- newMVar M.empty
-    (finalizer, finalizerData) <- makeMunmapFinalizer
 
-    bracket (listen path) close $ \sock -> do
-        wc <- async (waitForClients finalizer finalizerData clientIds clientsVar inpWr sock)
+    bracket (listen path) (\s -> putStrLn "closing socket" >> close s) $ \sock -> do
+        wc <- async (waitForClients clientIds clientsVar inpWr sock)
         be <- async (readUntilClosed bEvtRd (writeMChan inpWr . BackendEvent))
         ed <- async (eventDispatcher clientsVar clientEvts)
         mapM_ link [wc, be, ed]

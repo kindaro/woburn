@@ -13,6 +13,7 @@ import Linear
 import Prelude hiding (lookup)
 import Woburn.Frontend.Display.Object
 import Woburn.Frontend.Types
+import Woburn.Frontend.Types.Surface
 import Woburn.Frontend.Types.Window
 import Woburn.Protocol.Core
 import Woburn.Protocol.XdgShell
@@ -29,11 +30,11 @@ sendConfigure :: SObject XdgSurface -> Frontend ()
 sendConfigure surf = do
     (WindowData (V2 w h) states) <- lift . gets $ lookup (windowToId surf) . fsWindows
     serial                       <- nextEventSerial
-    xdgSurfaceConfigure (signals surf) w h (map toWord32 $ S.toList states) serial 
-
+    xdgSurfaceConfigure (signals surf) w h (map toWord32 $ S.toList states) serial
 
 xdgSurfaceSlots :: SObject WlSurface -> SignalConstructor Server XdgSurface Frontend
-xdgSurfaceSlots surface xdgSurface =
+xdgSurfaceSlots surface xdgSurface = do
+    sendRequest . C.WindowCreate windowId $ surfaceToId surface
     return
         XdgSurfaceSlots { xdgSurfaceDestroy           = destroy
                         , xdgSurfaceSetParent         = setParent
@@ -54,12 +55,12 @@ xdgSurfaceSlots surface xdgSurface =
         windowId = windowToId xdgSurface
 
         destroy = destroyClientObject xdgSurface
-        setParent parent = undefined
+        setParent parent = return ()
 
         setTitle = sendRequest . C.WindowSetTitle windowId
         setAppId = sendRequest . C.WindowSetClass windowId
 
-        showMenu seat serial x y = undefined
+        showMenu seat serial x y = error "showMenu is not implemented yet"
         move _ _ = return ()
         resize _ _ _ = return ()
         ackConfigure _ = return ()

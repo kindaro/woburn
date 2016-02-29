@@ -30,6 +30,7 @@ data WindowsData = WindowsData { windows :: M.Map WindowId WindowData }
 initialWindowsData :: WindowsData
 initialWindowsData = WindowsData { windows = M.empty }
 
+initialWindowData :: WindowData
 initialWindowData = WindowData 0 S.empty
 
 modifyWindow :: (WindowData -> WindowData)

@@ -5,6 +5,7 @@ module Woburn.Frontend.Display
     )
 where
 
+import Control.Arrow
 import Control.Monad.State
 import Graphics.Wayland
 import Woburn.Frontend.Callback
@@ -27,5 +28,5 @@ displaySlots =
 
         displayGetRegistry registryCons = do
             reg <- registryCons $ return . const registrySlots
-            lift $ modify (\s -> s { fsGlobals = insertRegistry reg (fsGlobals s) })
+            modify . second $ \s -> s { fsGlobals = insertRegistry reg (fsGlobals s) }
             announceGlobals reg

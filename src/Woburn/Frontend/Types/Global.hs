@@ -19,7 +19,7 @@ import Data.Word
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Set.Diet as D
-import Graphics.Wayland
+import Graphics.Wayland hiding (insert, delete)
 import Prelude hiding (lookup)
 import Woburn.Protocol.Core
 

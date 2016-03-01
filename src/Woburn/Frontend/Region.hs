@@ -6,6 +6,7 @@ module Woburn.Frontend.Region
     )
 where
 
+import Control.Arrow
 import Control.Monad.State
 import Data.Int
 import qualified Data.Map as M
@@ -21,7 +22,7 @@ mkRect x y w h = R.Rect (V2 x y) (V2 (x + w - 1) (y + h - 1))
 
 regionSlots :: SignalConstructor Server WlRegion Frontend
 regionSlots reg = do
-    lift . modify $ \s -> s { fsRegions = M.insert reg R.empty (fsRegions s) }
+    modify . second $ \s -> s { fsRegions = M.insert reg R.empty (fsRegions s) }
     return
         WlRegionSlots { wlRegionDestroy  = regionDestroy
                       , wlRegionAdd      = regionAdd
@@ -29,11 +30,11 @@ regionSlots reg = do
                       }
     where
         regionDestroy = do
-            lift . modify $ \s -> s { fsRegions = M.delete reg (fsRegions s) }
+            modify . second $ \s -> s { fsRegions = M.delete reg (fsRegions s) }
             destroyClientObject reg
 
         regionAdd x y w h =
-            lift . modify $ \s -> s { fsRegions = M.adjust (R.add $ mkRect x y w h) reg (fsRegions s) }
+            modify . second $ \s -> s { fsRegions = M.adjust (R.add $ mkRect x y w h) reg (fsRegions s) }
 
         regionSub x y w h =
-            lift . modify $ \s -> s { fsRegions = M.adjust (R.sub $ mkRect x y w h) reg (fsRegions s) }
+            modify . second $ \s -> s { fsRegions = M.adjust (R.sub $ mkRect x y w h) reg (fsRegions s) }

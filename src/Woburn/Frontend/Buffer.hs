@@ -15,7 +15,7 @@ import Woburn.Frontend.Types.Buffer as B
 import Woburn.Protocol.Core
 
 stateB :: (BuffersData -> (a, BuffersData)) -> Frontend a
-stateB f = lift . state $ \s -> second (\bd -> s { fsBuffers = bd }) (f (fsBuffers s))
+stateB f = state $ \(o, s) -> second (\bd -> (o, s { fsBuffers = bd })) (f (fsBuffers s))
 
 -- | Decrements the reference count of a buffer by one, and signaling the
 -- client if there are no more server references.
@@ -38,9 +38,9 @@ acquireBuffer obj = do
 
 bufferSlots :: Buffer -> SignalConstructor Server WlBuffer Frontend
 bufferSlots buf bufObj = do
-    lift . modify $ \s -> s { fsBuffers = B.insert bufObj buf (fsBuffers s) }
+    modify . second $ \s -> s { fsBuffers = B.insert bufObj buf (fsBuffers s) }
     return WlBufferSlots { wlBufferDestroy = destroy }
     where
         destroy = do
-            lift . modify $ \s -> s { fsBuffers = B.delete bufObj (fsBuffers s) }
+            modify . second $ \s -> s { fsBuffers = B.delete bufObj (fsBuffers s) }
             destroyClientObject bufObj

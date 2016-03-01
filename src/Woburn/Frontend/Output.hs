@@ -15,7 +15,6 @@ import Woburn.Output
 import Woburn.Protocol.Core
 import Woburn.Frontend.Registry
 import Woburn.Frontend.Types
-import Woburn.Frontend.Types.Output as O
 
 -- | Sends configure and mode events to the client.
 configureOutput :: MappedOutput -> SObject WlOutput -> Frontend ()
@@ -47,8 +46,7 @@ configureOutput (MappedOutput out (Rect (V2 x y) _)) obj = do
 -- | Returns a constructor that can be used to create new 'WlOutput' objects.
 outputCons :: MappedOutput -> SignalConstructor Server WlOutput Frontend
 outputCons mappedOut@(MappedOutput out _) obj = do
-
-    lift . modify $ \s -> s { fsOutputs = M.adjust (second (obj :)) (outputId out) (fsOutputs s) }
+    modify . second $ \s -> s { fsOutputs = M.adjust (second (obj :)) (outputId out) (fsOutputs s) }
     configureOutput mappedOut obj
     return WlOutputSlots
 
@@ -58,7 +56,7 @@ outputCons mappedOut@(MappedOutput out _) obj = do
 -- out new events telling the client about the new configuration.
 addOutput :: MappedOutput -> Frontend ()
 addOutput mappedOut@(MappedOutput out _) = do
-    info    <- lift . gets $ M.lookup (outputId out) . fsOutputs
+    info    <- gets $ M.lookup (outputId out) . fsOutputs . snd
     newInfo <- case info of
                  Nothing -> do
                      gid <- addGlobal (outputCons mappedOut)
@@ -69,13 +67,13 @@ addOutput mappedOut@(MappedOutput out _) = do
                      mapM_ (configureOutput mappedOut) objs
                      return (gid, objs)
 
-    lift . modify $ \s -> s { fsOutputs = M.insert (outputId out) newInfo (fsOutputs s) }
+    modify . second $ \s -> s { fsOutputs = M.insert (outputId out) newInfo (fsOutputs s) }
 
 -- | Removes an output.
 removeOutput :: MappedOutput -> Frontend ()
 removeOutput (MappedOutput out _) = do
-    info <- lift . gets $ M.lookup (outputId out) . fsOutputs
-    lift . modify $ \s -> s { fsOutputs = M.delete (outputId out) (fsOutputs s) }
+    info <- gets $ M.lookup (outputId out) . fsOutputs . snd
+    modify . second $ \s -> s { fsOutputs = M.delete (outputId out) (fsOutputs s) }
     case info of
       Nothing       -> error "Trying to remove an output that has not been added"
       Just (gid, _) -> delGlobal gid

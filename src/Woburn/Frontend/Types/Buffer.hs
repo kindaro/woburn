@@ -10,7 +10,7 @@ where
 
 import Control.Arrow
 import qualified Data.Map as M
-import Graphics.Wayland
+import Graphics.Wayland hiding (insert, delete)
 import Woburn.Buffer
 import Woburn.Protocol.Core
 

@@ -6,6 +6,7 @@ module Woburn.Frontend.Surface
     )
 where
 
+import Control.Arrow
 import Control.Monad.State
 import Data.Maybe
 import qualified Data.Region as R
@@ -42,7 +43,7 @@ toSurfaceState sd =
 surfaceSlots :: SignalConstructor Server WlSurface Frontend
 surfaceSlots surface = do
     sendRequest $ C.SurfaceCreate surfaceId
-    lift . modify $ \s -> s { fsSurfaces = insertSurface surface initialSurfaceData (fsSurfaces s) }
+    modify . second $ \s -> s { fsSurfaces = insertSurface surface initialSurfaceData (fsSurfaces s) }
     return
         WlSurfaceSlots { wlSurfaceDestroy            = destroy
                        , wlSurfaceAttach             = attach
@@ -58,12 +59,12 @@ surfaceSlots surface = do
     where
         surfaceId = surfaceToId surface
 
-        modifySurface f = lift . modify $ \s -> s { fsSurfaces = adjustSurface f surface (fsSurfaces s) }
+        modifySurface f = modify . second $ \s -> s { fsSurfaces = adjustSurface f surface (fsSurfaces s) }
 
         destroy = do
             sendRequest $ C.SurfaceDestroy surfaceId
-            subsurface <- lift $ gets ((>>= sdSubsurface) . lookupSurface surface . fsSurfaces)
-            lift . modify $ \s -> s { fsSurfaces = deleteSurface surface (fsSurfaces s) }
+            subsurface <- gets $ (>>= sdSubsurface) . lookupSurface surface . fsSurfaces . snd
+            modify . second $ \s -> s { fsSurfaces = deleteSurface surface (fsSurfaces s) }
             destroyClientObject surface
             maybe (return ()) makeSubsurfaceInert subsurface
 
@@ -83,22 +84,22 @@ surfaceSlots surface = do
             modifySurface $ \s -> s { sdFrameCallbacks = callback : sdFrameCallbacks s }
 
         setOpaque region = do
-            reg <- lift $ gets ((region >>=) . flip M.lookup . fsRegions)
+            reg <- gets $ (region >>=) . flip M.lookup . fsRegions . snd
             modifySurface $ \s -> s { sdOpaque = fromMaybe R.everything reg }
 
         setInput region = do
-            reg <- lift $ gets ((region >>=) . flip M.lookup . fsRegions)
+            reg <- gets $ (region >>=) . flip M.lookup . fsRegions . snd
             modifySurface $ \s -> s { sdInput = fromMaybe R.everything reg }
 
         commit = do
-            sData <- lift . gets $ lookupSurface surface . fsSurfaces
+            sData <- gets $ lookupSurface surface . fsSurfaces . snd
             cbs   <- case sData of
                        Nothing   -> error "Surface without surface data, should not happen"
                        Just surf -> do
                            sendRequest . C.SurfaceCommit surfaceId $ toSurfaceState surf
                            return $ sdFrameCallbacks surf
 
-            lift . modify $ \s -> s { fsSurfaces = insertCallbacks surfaceId cbs (fsSurfaces s) }
+            modify . second $ \s -> s { fsSurfaces = insertCallbacks surfaceId cbs (fsSurfaces s) }
             modifySurface nextSurfaceData
 
         setBufferTransform t' =
@@ -118,8 +119,8 @@ surfaceFrame sids = do
     mapM_ (f ts) sids
     where
         f ts sid = do
-            cbs <- lift . state $ \s ->
+            cbs <- state $ \(o, s) ->
                 ( lookupCallbacks sid (fsSurfaces s)
-                , s { fsSurfaces = deleteCallbacks sid (fsSurfaces s) }
+                , (o, s { fsSurfaces = deleteCallbacks sid (fsSurfaces s) })
                 )
             mapM_ (callbackDone ts) (reverse cbs)

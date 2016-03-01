@@ -4,6 +4,7 @@ module Woburn.Frontend.XdgSurface
     )
 where
 
+import Control.Arrow
 import Control.Monad
 import Control.Monad.State
 import qualified Data.Set as S
@@ -24,11 +25,11 @@ windowToId :: SObject XdgSurface -> WindowId
 windowToId = fromIntegral . unObjId . unObject
 
 modifyWindows :: (WindowsData -> WindowsData) -> Frontend ()
-modifyWindows f = lift . modify $ \s -> s { fsWindows = f (fsWindows s) }
+modifyWindows f = modify . second $ \s -> s { fsWindows = f (fsWindows s) }
 
 sendConfigure :: SObject XdgSurface -> Frontend ()
 sendConfigure surf = do
-    (WindowData (V2 w h) states) <- lift . gets $ lookup (windowToId surf) . fsWindows
+    (WindowData (V2 w h) states) <- gets $ lookup (windowToId surf) . fsWindows . snd
     serial                       <- nextEventSerial
     xdgSurfaceConfigure (signals surf) w h (map toWord32 $ S.toList states) serial
 

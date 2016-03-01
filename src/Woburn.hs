@@ -39,7 +39,7 @@ runClient :: ClientId                       -- ^ The client ID of this client.
           -> WMChan (CoreInput s)           -- ^ The channel core requests are sent on.
           -> IO ()
 runClient cid sock chan reqWr = do
-    ((_, iMgr), iFs) <- foldF interpretFrontend (runFrontend initFrontend newObjectManager initialFrontendState)
+    (_, (iMgr, iFs)) <- foldF interpretFrontend (runFrontend initFrontend newObjectManager initialFrontendState)
 
     (`evalStateT` (iMgr, iFs)) . forever  $ do
         (mgr, fs) <- get
@@ -56,27 +56,33 @@ runClient cid sock chan reqWr = do
             | otherwise                                            -> liftIO $ throwIO err
           _ -> return ()
 
-        liftIO $ putStrLn ("<< " ++ show m)
+        let (f, p) =
+                case m of
+                  Left  msg -> (handleMessage msg, putStrLn $ "msg <- " ++ showMsg MsgReq mgr msg)
+                  Right evt -> (handleEvent   evt, putStrLn $ "evt <- " ++ show evt)
 
-        let f = case m of
-                  Left  msg -> handleMessage msg
-                  Right evt -> handleEvent evt
+        liftIO p
 
-        ((res, mgr'), fs') <- liftIO $ foldF interpretFrontend (runFrontend f mgr fs)
+        (res, (mgr', fs')) <- liftIO . foldF interpretFrontend $ runFrontend f mgr fs
 
         put (mgr', fs')
         liftIO $ logError res
     where
+        showMsg msgType mgr msg =
+            case ppMsg (`lookupInterface` mgr) msgType msg of
+              Left  _ -> "Could not pretty-print " ++ show msg
+              Right p -> p
+
         interpretFrontend (GetClientId f           ) = return $ f cid
         interpretFrontend (GetTimestamp f          ) = (f . round . (* 1000)) <$> getPOSIXTime
 
-        interpretFrontend (SendMessage msg a       ) = do
-            putStrLn (">> " ++ show msg)
+        interpretFrontend (SendMessage msg mgr a   ) = do
+            putStrLn $ "msg -> " ++ showMsg MsgEvt mgr msg
             send sock msg
             return a
 
         interpretFrontend (SendRequest req a       ) = do
-            putStrLn (">> " ++ show req)
+            putStrLn ("req -> " ++ show req)
             writeMChan reqWr (ClientRequest cid req)
             return a
 

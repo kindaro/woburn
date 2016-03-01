@@ -3,11 +3,13 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module Woburn.Frontend.Types
     ( Frontend
     , FrontendState (..)
     , runFrontend
     , FrontendF (..)
+    , unregisterObject
 
     , sendRequest
     , mapMemory
@@ -20,12 +22,14 @@ module Woburn.Frontend.Types
     )
 where
 
+import Control.Arrow
 import Control.Monad.Free.Church
+import Control.Monad.Except
 import Control.Monad.State
 import Data.Int
 import Data.Word
 import Foreign.ForeignPtr
-import Graphics.Wayland
+import Graphics.Wayland as G
 import System.Posix.Types
 import qualified Woburn.Core as C
 
@@ -39,30 +43,57 @@ import Woburn.Frontend.Types.Window
 import Woburn.Types
 
 data FrontendF a =
-    SendMessage Message a
+    SendMessage Message (ObjectManager Server Frontend) a
   | SendRequest C.Request a
   | GetClientId (ClientId -> a)
   | GetTimestamp (Word32 -> a)
   | MapMemory Fd Int32 (Maybe (ForeignPtr Word8) -> a)
   deriving (Functor)
 
-newtype Inner a = Inner { unInner :: StateT FrontendState (F FrontendF) a }
-    deriving (Applicative, Functor, Monad, MonadFree FrontendF, MonadState FrontendState)
+newtype Frontend a =
+    Frontend { unFrontend :: ExceptT ObjectError (StateT (ObjectManager Server Frontend, FrontendState) (F FrontendF)) a }
+    deriving
+    ( Applicative
+    , Functor
+    , Monad
+    , MonadError ObjectError
+    , MonadFree FrontendF
+    , MonadState (ObjectManager Server Frontend, FrontendState)
+    )
 
-instance MonadSend Inner where
-    sendMessage msg = liftF $ SendMessage msg ()
+instance MonadSend Frontend where
+    sendMessage msg = do
+        mgr <- gets fst
+        liftF $ SendMessage msg mgr ()
+
+instance MonadObject Server Frontend where
+    allocObject = do
+        mv <- gets $ alloc . fst
+        case mv of
+          Nothing       -> throwError $ ErrUser "No more free object IDs"
+          Just (a, mgr) -> a <$ modify (first $ const mgr)
+
+    registerObject obj slots = modify . first $ G.insert obj slots
+
+    dispatchMessage msg = do
+        handler <- gets $ lookupHandler (msgObj msg) . fst
+        case handler of
+          Nothing -> throwError . ErrObject $ msgObj msg
+          Just h  -> h msg
+
+    protocolError obj = throwError . ErrMethod obj
 
 sendRequest :: C.Request -> Frontend ()
-sendRequest req = lift . liftF $ SendRequest req ()
+sendRequest req = liftF $ SendRequest req ()
 
 getClientId :: Frontend ClientId
-getClientId = lift . liftF $ GetClientId id
+getClientId = liftF $ GetClientId id
 
 getTimestamp :: Frontend Word32
-getTimestamp = lift . liftF $ GetTimestamp id
+getTimestamp = liftF $ GetTimestamp id
 
 mapMemory :: Fd -> Int32 -> Frontend (Maybe (ForeignPtr Word8))
-mapMemory fd size = lift . liftF $ MapMemory fd size id
+mapMemory fd size = liftF $ MapMemory fd size id
 
 data FrontendState =
     FrontendState { fsGlobals     :: GlobalsData Frontend
@@ -74,21 +105,21 @@ data FrontendState =
                   , fsEventSerial :: Word32
                   }
 
--- | The type of the frontend computations.
-type Frontend = WS Inner
+unregisterObject :: SObject i -> Frontend ()
+unregisterObject = modify . first . G.delete
 
 -- | Runs a 'Frontend' calculation.
 runFrontend :: Frontend a
-            -> ObjectManager Server Inner
+            -> ObjectManager Server Frontend
             -> FrontendState
-            -> F FrontendF ((Either ObjectError a, ObjectManager Server Inner), FrontendState)
-runFrontend f = runStateT . unInner . runW f
+            -> F FrontendF (Either ObjectError a, (ObjectManager Server Frontend, FrontendState))
+runFrontend f mgr fs = runStateT (runExceptT $ unFrontend f) (mgr, fs)
 
 nextEventSerial :: Frontend Word32
-nextEventSerial = lift . state $ \s -> (fsEventSerial s + 1, s { fsEventSerial = fsEventSerial s + 1 })
+nextEventSerial = state $ \(o, s) -> (fsEventSerial s + 1, (o, s { fsEventSerial = fsEventSerial s + 1 }))
 
 curEventSerial :: Frontend Word32
-curEventSerial = lift $ gets fsEventSerial
+curEventSerial = gets $ fsEventSerial . snd
 
 initialFrontendState :: FrontendState
 initialFrontendState =

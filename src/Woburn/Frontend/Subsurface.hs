@@ -5,6 +5,7 @@ module Woburn.Frontend.Subsurface
     )
 where
 
+import Control.Arrow
 import Control.Monad.State
 import Graphics.Wayland
 import Linear
@@ -29,7 +30,7 @@ subsurfaceSlots surface subSurface = do
     where
         surfaceId = surfaceToId surface
 
-        modifySurface f = lift . modify $ \s -> s { fsSurfaces = adjustSurface f surface (fsSurfaces s) }
+        modifySurface f = modify . second $ \s -> s { fsSurfaces = adjustSurface f surface (fsSurfaces s) }
 
         addSubsurface sd = sd { sdSubsurface = Just subSurface }
         delSubsurface sd = sd { sdSubsurface = Nothing }

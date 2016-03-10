@@ -14,7 +14,6 @@ import Control.Concurrent.MChan.Split
 import Control.Exception
 import Control.Monad.Free.Church
 import Control.Monad.Identity
-import Control.Monad.Reader
 import Control.Monad.State
 import Data.Maybe
 import Data.Tuple
@@ -32,42 +31,44 @@ import Woburn.Frontend
 import Woburn.Frontend.Types
 import Woburn.Types
 
+-- | Waits for an asynchronouse action, returning 'Nothing' if it was killed,
+-- the result if it finished running and re-throws the exception if it threw
+-- one.
+waitAndCheck :: Async a -> IO (Maybe a)
+waitAndCheck as = do
+    p <- waitCatch as
+    case p of
+      (Right  a) -> return (Just a)
+      (Left err)
+        | asyncExceptionFromException err == Just ThreadKilled -> return Nothing
+        | otherwise                                            -> throwIO err
+
 -- | Runs a single client.
-runClient :: ClientId                       -- ^ The client ID of this client.
-          -> Socket                         -- ^ The client socket.
-          -> Chan (Either Message Event)    -- ^ The channel new events will arrive on.
-          -> WMChan (CoreInput s)           -- ^ The channel core requests are sent on.
+runClient :: ClientId               -- ^ The client ID of this client.
+          -> Socket                 -- ^ The client socket.
+          -> Chan Event             -- ^ The channel new events will arrive on.
+          -> WMChan (CoreInput s)   -- ^ The channel core requests are sent on.
           -> IO ()
 runClient cid sock chan reqWr = do
     (_, (iMgr, iFs)) <- foldF interpretFrontend (runFrontend initFrontend newObjectManager initialFrontendState)
-
-    (`evalStateT` (iMgr, iFs)) . forever  $ do
-        (mgr, fs) <- get
-        sa        <- liftIO . async . mask_ $ recv (messageLookup mgr) sock >>= writeChan chan . Left
-        m         <- liftIO $ readChan chan
-
-        -- Cancel, and check for bad exceptions from 'recv'.
-        liftIO $ cancel sa
-        saRes <- liftIO $ waitCatch sa
-
-        case saRes of
-          Left err
-            | asyncExceptionFromException err == Just ThreadKilled -> return ()
-            | otherwise                                            -> liftIO $ throwIO err
-          _ -> return ()
-
-        let (f, p) =
-                case m of
-                  Left  msg -> (handleMessage msg, putStrLn $ "msg <- " ++ showMsg MsgReq mgr msg)
-                  Right evt -> (handleEvent   evt, putStrLn $ "evt <- " ++ show evt)
-
-        liftIO p
-
-        (res, (mgr', fs')) <- liftIO . foldF interpretFrontend $ runFrontend f mgr fs
-
-        put (mgr', fs')
-        liftIO $ logError res
+    loop iMgr iFs
     where
+        loop mgr fs = do
+            sm <- mask_ . async $ Left  <$> recv (messageLookup mgr) sock
+            se <- mask_ . async $ Right <$> readChan chan
+            waitEither_ sm se
+            mapM_ cancel [sm, se]
+
+            (handlers, ps)     <- (unzip . map (getHandler mgr) . catMaybes) <$> mapM waitAndCheck [sm, se]
+            sequence_ ps
+            (res, (mgr', fs')) <- foldF interpretFrontend $ runFrontend (sequence_ handlers) mgr fs
+
+            logError res
+            loop mgr' fs'
+
+        getHandler mgr (Left  msg) = (handleMessage msg, putStrLn $ "msg <- " ++ showMsg MsgReq mgr msg)
+        getHandler _   (Right evt) = (handleEvent   evt, putStrLn $ "evt <- " ++ show evt)
+
         showMsg msgType mgr msg =
             case ppMsg (`lookupInterface` mgr) msgType msg of
               Left  _ -> "Could not pretty-print " ++ show msg
@@ -98,10 +99,10 @@ logError :: Either ObjectError () -> IO ()
 logError = either (hPrint stderr) return
 
 -- | Waits for incoming client connections, and spins of new threads to run them.
-waitForClients :: MVar (D.Diet ClientId)                              -- ^ A set of free 'ClientId's
-               -> MVar (M.Map ClientId (Chan (Either Message Event))) -- ^ A map of client's event channels.
-               -> WMChan (CoreInput s)                                -- ^ The channel core requests are sent on.
-               -> Socket                                              -- ^ The socket to listen on.
+waitForClients :: MVar (D.Diet ClientId)             -- ^ A set of free 'ClientId's
+               -> MVar (M.Map ClientId (Chan Event)) -- ^ A map of client's event channels.
+               -> WMChan (CoreInput s)               -- ^ The channel core requests are sent on.
+               -> Socket                             -- ^ The socket to listen on.
                -> IO ()
 waitForClients clientIds clientsVar wChan socket = forever $ do
     clientSocket <- accept socket
@@ -125,15 +126,15 @@ waitForClients clientIds clientsVar wChan socket = forever $ do
             writeMChan wChan $ ClientDel cid
 
 -- | Dispatches events from core to the correct clients.
-eventDispatcher :: MVar (M.Map ClientId (Chan (Either a Event)))
+eventDispatcher :: MVar (M.Map ClientId (Chan Event))
                 -> Chan (Maybe ClientId, Event)
                 -> IO ()
 eventDispatcher clientsVar clientEvts = forever $ do
     (mCid, evt) <- readChan clientEvts
     withMVar clientsVar $ \clients ->
         case mCid of
-          Nothing  -> mapM_ (`writeChan` Right evt) (M.elems clients)
-          Just cid -> maybe (return ()) (`writeChan` Right evt) (M.lookup cid clients)
+          Nothing  -> mapM_ (`writeChan` evt) (M.elems clients)
+          Just cid -> maybe (return ()) (`writeChan` evt) (M.lookup cid clients)
 
 -- | Starts Woburn.
 --

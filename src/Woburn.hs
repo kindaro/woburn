@@ -151,7 +151,7 @@ run path = do
     clientIds                  <- newMVar . D.singletonI $ D.Interval minBound maxBound
     clientsVar                 <- newMVar M.empty
 
-    bracket (listen path) (\s -> putStrLn "closing socket" >> close s) $ \sock -> do
+    bracket (listen path) close $ \sock -> do
         wc <- async (waitForClients clientIds clientsVar inpWr sock)
         be <- async (readUntilClosed bEvtRd (writeMChan inpWr . BackendEvent))
         ed <- async (eventDispatcher clientsVar clientEvts)

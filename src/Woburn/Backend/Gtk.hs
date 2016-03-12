@@ -33,6 +33,13 @@ data GtkBuffer =
 
 newtype GtkSurface = GtkSurface { unGtkSurface :: IORef (Maybe GtkBuffer) }
 
+finalizeGtkSurface :: WMChan B.Event -> IORef (Maybe GtkBuffer) -> IO ()
+finalizeGtkSurface evtWr ref = do
+    surf <- readIORef ref
+    case surf of
+      Nothing  -> return ()
+      Just buf -> writeMChan evtWr . B.BufferReleased $ buffer buf
+
 outId :: OutputId
 outId = 0
 
@@ -54,8 +61,11 @@ mkOut w h =
         dotsPerMm = dotsPerInch * mmPerInch
         mmPerInch = 25.4
 
-createSurface :: IO GtkSurface
-createSurface = GtkSurface <$> newIORef Nothing
+createSurface :: WMChan B.Event -> IO GtkSurface
+createSurface evtWr = do
+    ref <- newIORef Nothing
+    _   <- mkWeakIORef ref (finalizeGtkSurface evtWr ref)
+    return $ GtkSurface ref
 
 pixbufFromBuffer :: Buffer -> IO Pixbuf
 pixbufFromBuffer buf = withBuffer buf $ \ptr ->
@@ -71,11 +81,15 @@ gtkBufferFromState s =
       Nothing -> return Nothing
       Just b  -> Just . GtkBuffer b (surfBufferOffset s) (surfBufferScale s) <$> pixbufFromBuffer b
 
-commitSurface :: Surface GtkSurface -> IO ()
-commitSurface surf =
+commitSurface :: WMChan B.Event -> Surface GtkSurface -> IO ()
+commitSurface evtWr surf =
     case surfState surf of
       Nothing -> return ()
-      Just s  -> writeIORef (unGtkSurface $ surfData surf) =<< gtkBufferFromState s
+      Just s  -> do
+          let ref = unGtkSurface $ surfData surf
+          finalizeGtkSurface evtWr ref
+          newBuf <- gtkBufferFromState s
+          writeIORef ref newBuf
 
 drawSurface :: DrawWindow -> GC -> (V2 Int32, GtkSurface) -> IO ()
 drawSurface dw gc (off, surf) = do
@@ -148,12 +162,12 @@ gtkBackend = do
     _ <- forkIO $ readUntilClosed reqRd (reqHandler evtWr win)
 
     postGUISync $ widgetShowAll win
-    return (reqWr, evtRd, createSurface)
+    return (reqWr, evtRd, createSurface evtWr)
     where
         reqHandler evtWr win req =
             case req of
               B.OutputSetMode _ _               -> error "Gtk surfaces should have only one mode"
               B.SurfaceCommit surfaces layedOut -> postGUISync $ do
-                      mapM_ commitSurface surfaces
+                      mapM_ (commitSurface evtWr) surfaces
                       maybe (return ()) (draw win) (lookup outId layedOut)
                       writeMChan evtWr $ B.OutputFrame outId

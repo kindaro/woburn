@@ -12,7 +12,7 @@ import Data.Int
 import Data.Rect
 import Data.STree
 import Data.Word
-import GHC.Conc
+import GHC.Conc (labelThread)
 import Graphics.UI.Gtk
 import Graphics.UI.Gtk.Gdk.GC
 import Linear
@@ -21,8 +21,6 @@ import Woburn.Output
 import Woburn.Protocol.Core
 import Woburn.Surface
 import qualified Woburn.Backend as B
-
-import Text.Printf
 
 data GtkBuffer =
     GtkBuffer { buffer :: Buffer
@@ -111,17 +109,13 @@ drawWindow dw gc scissorRect surfaces  = do
         traverseR_ :: (Foldable t, Applicative f) => (a -> f ()) -> t a -> f ()
         traverseR_ f = foldl (\b a -> f a *> b) (pure ())
 
-draw :: Window -> [(Rect Word32, STree (V2 Int32, GtkSurface))] -> IO ()
-draw win windows = do
+draw :: WMChan B.Event -> Window -> [(Rect Word32, STree (V2 Int32, GtkSurface))] -> IO ()
+draw evtWr win windows = do
     dw <- widgetGetDrawWindow win
-    w  <- drawWindowGetWidth dw
-    h  <- drawWindowGetHeight dw
     gc <- gcNewWithValues dw defaultGCValues
 
-    drawWindowBeginPaintRect dw (Rectangle 0 0 w h)
-    drawRectangle dw gc True 0 0 w h
     mapM_ (uncurry $ drawWindow dw gc) windows
-    drawWindowEndPaint dw
+    writeMChan evtWr $ B.OutputFrame outId
     where
         defaultGCValues =
             GCValues { foreground       = Color 0 0 0
@@ -148,26 +142,37 @@ gtkBackend = do
     (evtRd, evtWr) <- newMChan
     (reqRd, reqWr) <- newMChan
 
-    tid <- forkOS $ handle (print :: SomeException -> IO ()) (initGUI >> mainGUI)
-    win <- postGUISync windowNew
+    tid       <- forkOS $ handle (print :: SomeException -> IO ()) (initGUI >> mainGUI)
+    win       <- postGUISync windowNew
+    layoutVar <- newMVar Nothing
+
     labelThread tid "GtkThread"
     postGUISync $ set win [windowTitle := "Woburn Compositor"]
 
-    _   <- postGUISync . on win configureEvent $ do
+    _ <- postGUISync . on win configureEvent $ do
         (w, h) <- eventSize
-        liftIO $ printf "Window resized: (%i, %i)\n" w h
         liftIO . writeMChan evtWr . B.OutputAdded $ mkOut (fromIntegral w) (fromIntegral h)
         return True
 
-    _ <- forkIO $ readUntilClosed reqRd (reqHandler evtWr win)
+    _ <- postGUISync . on win exposeEvent $ do
+        liftIO . withMVar layoutVar $ maybe (return ()) (draw evtWr win)
+        return True
+
+    _ <- forkIO $ readUntilClosed reqRd (reqHandler evtWr win layoutVar)
 
     postGUISync $ widgetShowAll win
     return (reqWr, evtRd, createSurface evtWr)
     where
-        reqHandler evtWr win req =
+        reqHandler evtWr win layoutVar req =
             case req of
               B.OutputSetMode _ _               -> error "Gtk surfaces should have only one mode"
-              B.SurfaceCommit surfaces layedOut -> postGUISync $ do
+              B.SurfaceCommit surfaces layedOut -> do
+                  threadsEnter
+                  modifyMVar_ layoutVar $ \_ -> do
+                      dw <- widgetGetDrawWindow win
+                      w  <- drawWindowGetWidth dw
+                      h  <- drawWindowGetHeight dw
                       mapM_ (commitSurface evtWr) surfaces
-                      maybe (return ()) (draw win) (lookup outId layedOut)
-                      writeMChan evtWr $ B.OutputFrame outId
+                      widgetQueueDrawArea win 0 0 w h
+                      return (lookup outId layedOut)
+                  threadsLeave

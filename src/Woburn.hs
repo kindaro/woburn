@@ -112,11 +112,10 @@ waitForClients clientIds clientsVar wChan socket = forever $ do
     modifyMVar_ clientsVar (return . M.insert cid evtChan)
     writeMChan wChan $ ClientAdd cid
 
-    void .
-        forkIO $
-        runClient cid clientSocket evtChan wChan
-        `finally`
-        finalizer cid clientSocket
+    void $
+        forkFinally
+        (runClient cid clientSocket evtChan wChan)
+        (\_ -> finalizer cid clientSocket)
 
     where
         finalizer cid sock = do

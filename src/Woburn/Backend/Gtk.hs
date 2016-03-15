@@ -16,6 +16,7 @@ import GHC.Conc (labelThread)
 import Graphics.UI.Gtk
 import Graphics.UI.Gtk.Gdk.GC
 import Linear
+import System.Mem.Weak
 import Woburn.Buffer
 import Woburn.Output
 import Woburn.Protocol.Core
@@ -29,7 +30,10 @@ data GtkBuffer =
               , pixbuf :: Pixbuf
               }
 
-newtype GtkSurface = GtkSurface { unGtkSurface :: IORef (Maybe GtkBuffer) }
+data GtkSurface =
+    GtkSurface { surfRef     :: IORef (Maybe GtkBuffer)
+               , surfWeakRef :: Weak (IORef (Maybe GtkBuffer))
+               }
 
 finalizeGtkSurface :: WMChan B.Event -> IORef (Maybe GtkBuffer) -> IO ()
 finalizeGtkSurface evtWr ref = do
@@ -61,9 +65,9 @@ mkOut w h =
 
 createSurface :: WMChan B.Event -> IO GtkSurface
 createSurface evtWr = do
-    ref <- newIORef Nothing
-    _   <- mkWeakIORef ref (finalizeGtkSurface evtWr ref)
-    return $ GtkSurface ref
+    ref  <- newIORef Nothing
+    weak <- mkWeakIORef ref (finalizeGtkSurface evtWr ref)
+    return $ GtkSurface ref weak
 
 pixbufFromBuffer :: Buffer -> IO Pixbuf
 pixbufFromBuffer buf = withBuffer buf $ \ptr ->
@@ -84,14 +88,15 @@ commitSurface evtWr surf =
     case surfState surf of
       Nothing -> return ()
       Just s  -> do
-          let ref = unGtkSurface $ surfData surf
-          finalizeGtkSurface evtWr ref
           newBuf <- gtkBufferFromState s
+          finalizeGtkSurface evtWr ref
           writeIORef ref newBuf
+    where
+        ref = surfRef $ surfData surf
 
 drawSurface :: DrawWindow -> GC -> (V2 Int32, GtkSurface) -> IO ()
 drawSurface dw gc (off, surf) = do
-    mBuf <- readIORef $ unGtkSurface surf
+    mBuf <- readIORef $ surfRef surf
     case mBuf of
       Nothing  -> return ()
       Just buf -> do
@@ -166,6 +171,7 @@ gtkBackend = do
         reqHandler evtWr win layoutVar req =
             case req of
               B.OutputSetMode _ _               -> error "Gtk surfaces should have only one mode"
+              B.SurfaceDestroy surfaces         -> mapM_ (finalize . surfWeakRef . surfData) surfaces
               B.SurfaceCommit surfaces layedOut -> do
                   threadsEnter
                   modifyMVar_ layoutVar $ \_ -> do

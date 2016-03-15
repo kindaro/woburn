@@ -5,6 +5,7 @@ module Woburn.Surface.Map
     , lookupSurface
     , lookupSurfaces
     , modifySurface
+    , getSurfaces
     , insert
     , delete
     , attach
@@ -79,6 +80,10 @@ insertShuffle :: Shuffle
               -> SurfaceMap s
               -> SurfaceMap s
 insertShuffle sh = M.adjust . first $ \s -> s { surfShuffle = sh : surfShuffle s }
+
+-- | Returns all the surfaces in a 'SurfaceMap'.
+getSurfaces :: SurfaceMap s -> [Surface s]
+getSurfaces = map fst . M.elems
 
 -- | Inserts a new 'Surface' into the 'SurfaceMap'.
 insert :: SurfaceId

@@ -314,7 +314,12 @@ handleCoreRequest cid req =
          SurfaceCreate      sid      -> do
              surf <- create <$> backendSurfGet
              modifySurfaces $ SM.insert sid surf
-         SurfaceDestroy     sid      -> checkError BadSurface . modifySurfacesFail $ SM.delete sid
+         SurfaceDestroy     sid      -> do
+             msurf <- gets $ \s -> do
+                 cd <- M.lookup cid $ clients s
+                 SM.lookupSurface sid $ surfaces cd
+             checkError BadSurface . modifySurfacesFail $ SM.delete sid
+             maybe (return ()) (backendRequest . B.SurfaceDestroy . (: [])) msurf
          SurfaceAttach      sid tid  -> checkError BadSurface . modifySurfacesFail $ SM.attach sid tid
          SurfaceCommit      sid ss   -> checkError BadSurface . modifyAndCommitSurfaces $ SM.setState ss sid
          SurfaceSetPosition sid pos  -> modifySurface (setPosition pos) sid
@@ -361,10 +366,16 @@ handleInput input =
     case input of
          BackendEvent  evt     -> handleBackendEvent evt
          ClientRequest cid req -> handleCoreRequest cid req
-         ClientDel     cid     -> modify (\s -> s { clients = M.delete cid (clients s) })
          ClientAdd     cid     -> do
              modify (\s -> s { clients = M.insert cid newClientData (clients s) })
              announceOutputs cid
+         ClientDel     cid     -> do
+             -- When a client is deleted we have to remove the client data
+             cd <- state $ \s -> (M.lookup cid (clients s), s { clients  = M.delete cid (clients s) })
+             -- and all of its windows
+             modifyUniverse . U.filter $ \(ClientWindowId cid' _) -> cid' /= cid
+             -- and destoy its surfaces
+             backendRequest . B.SurfaceDestroy $ maybe [] (SM.getSurfaces . surfaces) cd
     where
         newClientData = ClientData SM.empty M.empty
 

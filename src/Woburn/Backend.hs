@@ -22,6 +22,8 @@ data Request s =
     -- surfaces are paired with their offset from the upper left corner of the
     -- output.
   | SurfaceCommit [Surface s] [(OutputId, [(Rect Word32, STree (V2 Int32, s))])]
+    -- | Notifies the backend that a set of surfaces has been destroyed.
+  | SurfaceDestroy [Surface s]
   deriving (Eq, Show)
 
 -- | Describes an event from the backend to the core.

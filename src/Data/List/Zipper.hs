@@ -10,10 +10,13 @@ module Data.List.Zipper
     , insert
     , delete
     , modify
+    , filter
     )
 where
 
 import Data.Monoid
+import qualified Data.List as L
+import Prelude hiding (filter)
 
 -- | A list zipper.
 data Zipper a = Zipper [a] [a]
@@ -64,8 +67,8 @@ insert x (Zipper ls rs) = Zipper ls (x:rs)
 -- | Deletes an item from the zipper.
 delete :: Eq a => a -> Zipper a -> Zipper a
 delete x (Zipper ls rs) =
-    let ls' = filter (/= x) ls
-        rs' = filter (/= x) rs
+    let ls' = L.filter (/= x) ls
+        rs' = L.filter (/= x) rs
     in
     case (ls', rs') of
       ([]  , _ ) -> Zipper ls' rs'
@@ -78,3 +81,6 @@ modify f z@(Zipper ls rs) =
     case rs of
       []      -> z
       (r:rrs) -> Zipper ls (f r : rrs)
+
+filter :: (a -> Bool) -> Zipper a -> Zipper a
+filter p (Zipper ls rs) = Zipper (L.filter p ls) (L.filter p rs)

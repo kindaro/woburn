@@ -9,6 +9,7 @@ module Woburn.Universe
     , insert
     , delete
     , onOutput
+    , filter
     )
 where
 
@@ -17,6 +18,7 @@ import Data.Rect
 import Data.Word
 import qualified Data.List.Zipper as Z
 import qualified Data.Map as M
+import Prelude hiding (filter)
 import Woburn.Output
 
 data Universe a =
@@ -97,6 +99,16 @@ onOutput oid u =
       Just screen ->
           toList (windows $ workspace screen)
           ++ M.keys (M.filter (overlaps . mappedRect $ output screen) (floating u))
+
+filter :: (a -> Bool) -> Universe a -> Universe a
+filter p u =
+    u { screens  = fmap filterScreen    (screens u)
+      , hidden   = fmap filterWorkspace (hidden  u)
+      , floating = M.filterWithKey (\k _ -> p k) (floating u)
+      }
+    where
+        filterScreen    s = s { workspace = filterWorkspace (workspace s) }
+        filterWorkspace w = w { windows   = Z.filter p (windows w) }
 
 {-
 focusDown :: Universe a -> Universe a

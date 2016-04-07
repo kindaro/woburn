@@ -3,7 +3,6 @@ where
 
 import Data.Int
 import Data.Rect
-import Data.STree
 import Data.Word
 import Linear
 import Woburn.Buffer
@@ -18,12 +17,12 @@ data Request s =
     --
     -- The layout is a list of outpus, with their windows.
     --
-    -- The windows have a rectangular outline, and a tree of surfaces. The
-    -- surfaces are paired with their offset from the upper left corner of the
-    -- output.
-  | SurfaceCommit [Surface s] [(OutputId, [(Rect Word32, STree (V2 Int32, s))])]
+    -- The windows have a rectangular outline, and a list of surfaces. The
+    -- surfaces are ordered with the top-most surface first.. The surfaces are
+    -- paired with their offset from the upper left corner of the output.
+  | SurfaceCommit [Surface s ()] [(OutputId, [(Rect Word32, [(V2 Int32, s)])])]
     -- | Notifies the backend that a set of surfaces has been destroyed.
-  | SurfaceDestroy [Surface s]
+  | SurfaceDestroy [Surface s ()]
   deriving (Eq, Show)
 
 -- | Describes an event from the backend to the core.

@@ -10,7 +10,6 @@ import Control.Monad.IO.Class
 import Data.IORef
 import Data.Int
 import Data.Rect
-import Data.STree
 import Data.Word
 import GHC.Conc (labelThread)
 import Graphics.UI.Gtk
@@ -77,20 +76,17 @@ pixbufFromBuffer buf = withBuffer buf $ \ptr ->
         (fromIntegral $ bufHeight buf)
         (fromIntegral $ bufStride buf)
 
-gtkBufferFromState :: SurfaceState -> IO (Maybe GtkBuffer)
+gtkBufferFromState :: SurfaceState () -> IO (Maybe GtkBuffer)
 gtkBufferFromState s =
     case surfBuffer s of
       Nothing -> return Nothing
       Just b  -> Just . GtkBuffer b (surfBufferOffset s) (surfBufferScale s) <$> pixbufFromBuffer b
 
-commitSurface :: WMChan B.Event -> Surface GtkSurface -> IO ()
-commitSurface evtWr surf =
-    case surfState surf of
-      Nothing -> return ()
-      Just s  -> do
-          newBuf <- gtkBufferFromState s
-          finalizeGtkSurface evtWr ref
-          writeIORef ref newBuf
+commitSurface :: WMChan B.Event -> Surface GtkSurface () -> IO ()
+commitSurface evtWr surf = do
+    newBuf <- gtkBufferFromState $ surfState surf
+    finalizeGtkSurface evtWr ref
+    writeIORef ref newBuf
     where
         ref = surfRef $ surfData surf
 
@@ -104,17 +100,13 @@ drawSurface dw gc (off, surf) = do
           drawPixbuf dw gc (pixbuf buf) 0 0 x y (-1) (-1) RgbDitherNone 0 0
           touchBuffer (buffer buf)
 
-drawWindow :: DrawWindow -> GC -> Rect Word32 -> STree (V2 Int32, GtkSurface) -> IO ()
+drawWindow :: DrawWindow -> GC -> Rect Word32 -> [(V2 Int32, GtkSurface)] -> IO ()
 drawWindow dw gc scissorRect surfaces  = do
     let r@(Rect (V2 x1 y1) _) = fmap fromIntegral scissorRect
     gcSetClipRectangle gc (Rectangle x1 y1 (width r) (height r))
-    traverseR_ (drawSurface dw gc) surfaces
-    where
-        -- traverse_ that works right to left.
-        traverseR_ :: (Foldable t, Applicative f) => (a -> f ()) -> t a -> f ()
-        traverseR_ f = foldl (\b a -> f a *> b) (pure ())
+    mapM_ (drawSurface dw gc) (reverse surfaces)
 
-draw :: WMChan B.Event -> Window -> [(Rect Word32, STree (V2 Int32, GtkSurface))] -> IO ()
+draw :: WMChan B.Event -> Window -> [(Rect Word32, [(V2 Int32, GtkSurface)])] -> IO ()
 draw evtWr win windows = do
     dw <- widgetGetDrawWindow win
     gc <- gcNewWithValues dw defaultGCValues

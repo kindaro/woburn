@@ -4,13 +4,7 @@ module Woburn.Surface
     ( SurfaceId
     , Surface (..)
     , SurfaceState (..)
-    , Buffered (..)
-    , Shuffle (..)
-    , ShuffleOperation (..)
-    , commitPosition
-    , getPosition
-    , setPosition
-    , committed
+    , modifyState
     , create
     )
 where
@@ -22,23 +16,10 @@ import Linear
 import Woburn.Buffer
 import Woburn.Protocol.Core
 
-data Buffered a = Buffered { currentState :: !a, pendingState :: !a }
-    deriving (Eq, Show)
-
 newtype SurfaceId = SurfaceId Word32
     deriving (Eq, Ord, Show, Num, Real, Integral, Enum)
 
-data Shuffle = Shuffle ShuffleOperation SurfaceId SurfaceId
-    deriving (Eq, Show)
-
-data ShuffleOperation =
-    PlaceAbove
-  | PlaceBelow
-  | DeletedAbove
-  | DeletedBelow
-  deriving (Eq, Show)
-
-data SurfaceState =
+data SurfaceState a =
     SurfaceState { surfBuffer       :: Maybe Buffer
                  , surfBufferOffset :: V2 Int32
                  , surfBufferScale  :: Int32
@@ -46,67 +27,34 @@ data SurfaceState =
                  , surfOpaque       :: Region Int32
                  , surfInput        :: Region Int32
                  , surfTransform    :: WlOutputTransform
+                 , surfChildren     :: [(V2 Int32, a)]
                  }
     deriving (Eq, Show)
 
-data Surface s =
-    Surface { surfSync      :: Bool                  -- ^ Whether the surface is in sync mode.
-            , surfState     :: Maybe SurfaceState    -- ^ The pending state that will be used on the next commit.
-            , surfPosition  :: Buffered (V2 Int32)   -- ^ Surface position relative to parent surface.
-            , surfShuffle   :: [Shuffle]             -- ^ Shuffle operations to perform on the next commit.
-            , surfCurInput  :: Region Int32          -- ^ Current input region. If this surface is in sync mode
-                                                     --   this is copied from the current state when the parent
-                                                     --   is committed, otherwise it is updated at the same time
-                                                     --   as the current state.
-            , surfData      :: s                     -- ^ Internal data used by the backend.
+data Surface s a =
+    Surface { surfState :: SurfaceState a -- ^ The current surface state.
+            , surfData  :: s              -- ^ Internal data used by the backend.
             }
-    deriving (Eq)
+    deriving (Eq, Show)
 
-instance Ord a => Ord (Surface a) where
-    compare a b = compare (surfData a) (surfData b)
-
-instance Show a => Show (Surface a) where
-    show s =
-        "Surface { surfSync     = " ++ show (surfSync s) ++ "\n" ++
-        "        , surfState    = " ++ show (surfState s) ++ "\n" ++
-        "        , surfPosition = " ++ show (surfPosition s) ++ "\n" ++
-        "        , surfShuffle  = " ++ show (surfShuffle s) ++ "\n" ++
-        "        , surfCurInput = " ++ show (surfCurInput s) ++ "\n" ++
-        "        , surfData     = " ++ show (surfData s) ++ "\n" ++
-        "        }\n"
-
--- | Updates the current value with the pending value.
-flipBuffered :: Buffered a -> Buffered a
-flipBuffered b = b { currentState = pendingState b }
-
--- | Commits the pending position.
-commitPosition :: Surface a -> Surface a
-commitPosition s = s { surfPosition = flipBuffered (surfPosition s) }
-
--- | Sets the pending position.
-setPosition :: V2 Int32 -> Surface a -> Surface a
-setPosition pos s = s { surfPosition = (surfPosition s) { pendingState = pos } }
-
--- | Gets the current position.
-getPosition :: Surface a -> V2 Int32
-getPosition = currentState . surfPosition
-
--- | Updates the surface after it has been committed.
---
--- Removes the pending state after updating the current input region it.
-committed :: Surface a -> Surface a
-committed surf = surf { surfState    = Nothing
-                      , surfCurInput = maybe (surfCurInput surf) surfInput (surfState surf)
-                      , surfShuffle  = []
-                      }
+-- | Modifies the surface state.
+modifyState :: (SurfaceState a -> SurfaceState b) -> Surface s a -> Surface s b
+modifyState f s = s { surfState = f (surfState s) }
 
 -- | Creates a new surface.
-create :: s -> Surface s
+create :: s -> Surface s a
 create s =
-    Surface { surfSync      = False
-            , surfState     = Nothing
-            , surfPosition  = Buffered 0 0
-            , surfShuffle   = []
-            , surfCurInput  = everything
-            , surfData      = s
+    Surface { surfState = initialState
+            , surfData  = s
             }
+    where
+        initialState =
+            SurfaceState { surfBuffer       = Nothing
+                         , surfBufferOffset = 0
+                         , surfBufferScale  = 1
+                         , surfDamage       = empty
+                         , surfOpaque       = everything
+                         , surfInput        = everything
+                         , surfTransform    = WlOutputTransformNormal
+                         , surfChildren     = []
+                         }

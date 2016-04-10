@@ -12,6 +12,7 @@ module Woburn.Surface.Map
 where
 
 import Control.Monad
+import Data.Maybe
 import qualified Data.Map as M
 import Data.Int
 import Linear
@@ -54,19 +55,24 @@ elems = M.elems
 lookupAll :: V2 Int32       -- ^ A global offset to apply.
           -> SurfaceId      -- ^ The ID of the parent surface.
           -> SurfaceMap s   -- ^ The map to lookup in.
-          -> Maybe [(V2 Int32, Surface s ())]
-lookupAll globalOff sid sm = do
-    surf <- lookup sid sm >>= traverse (\(off, tid) -> lookupAll (globalOff + off) tid sm)
-    let (l, r) = surfChildren (surfState surf)
-    return (concat l ++ [(globalOff, void surf)] ++ concat r)
+          -> [(V2 Int32, Surface s ())]
+lookupAll globalOff sid sm =
+    case fmap (\(off, tid) -> lookupAll (globalOff + off) tid sm) <$> lookup sid sm of
+      Nothing   -> []
+      Just surf ->
+          let (l, r) = surfChildren $ surfState surf
+          in (concat l ++ [(globalOff, void surf)] ++ concat r)
 
 -- | Looks up the 'SurfaceId' of a surface and all its children.
-lookupAllIds :: SurfaceId -> SurfaceMap s -> Maybe [SurfaceId]
-lookupAllIds sid sm = do
-    surf <- lookup sid sm >>= traverse ((`lookupAllIds` sm) . snd)
-    let (l, r) = surfChildren (surfState surf)
-    return (concat l ++ [sid] ++ concat r)
+lookupAllIds :: SurfaceId -> SurfaceMap s -> [SurfaceId]
+lookupAllIds sid sm =
+    case fmap ((`lookupAllIds` sm) . snd) <$> lookup sid sm of
+      Nothing   -> []
+      Just surf ->
+          let (l, r) = surfChildren $ surfState surf
+          in (concat l ++ [sid] ++ concat r)
 
+-- | Applies a function to a surface.
 adjust :: (Surface s (V2 Int32, SurfaceId) -> Surface s (V2 Int32, SurfaceId))
        -> SurfaceId
        -> SurfaceMap s

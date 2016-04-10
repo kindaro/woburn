@@ -66,12 +66,6 @@ data ClientData s =
                , windows  :: M.Map WindowId Window
                }
 
--- | What sort of surface commit operation to perform.
-data CommitOp =
-    CommitFull   -- ^ Do a full commit.
-  | CommitLayout -- ^ Only do a layout update, do not send the new surface state to the backend.
-  deriving (Eq, Show, Ord, Enum)
-
 -- | A core request.
 data Request =
     WindowCreate WindowId SurfaceId
@@ -81,7 +75,7 @@ data Request =
 
   | SurfaceCreate SurfaceId
   | SurfaceDestroy SurfaceId
-  | SurfaceCommit CommitOp [(SurfaceId, SurfaceState (V2 Int32, SurfaceId))]
+  | SurfaceCommit [(SurfaceId, SurfaceState (V2 Int32, SurfaceId))]
   deriving (Eq, Show)
 
 -- | A core event.
@@ -175,40 +169,38 @@ backendCommit ss = do
     l  <- gets layedOut
     cs <- gets clients
 
-    case mapLayoutToSurfaces cs l of
-      Nothing -> coreError "Could not map ClientWindowId to surface tree"
-      Just l' -> backendRequest $ B.SurfaceCommit ss l'
+    backendRequest . B.SurfaceCommit ss $ mapLayoutToSurfaces cs l
     where
         -- | Maps all the 'ClientWindowId' in the layout to the containing
         -- rectangle along with the surface tree, and maps the 'MappedOutput'
         -- to their respective 'OutputId'.
         mapLayoutToSurfaces :: M.Map ClientId (ClientData s)
                             -> [(MappedOutput, [(Rect Word32, ClientWindowId)])]
-                            -> Maybe [(OutputId, [(Rect Word32, [(V2 Int32, s)])])]
+                            -> [(OutputId, [(Rect Word32, [(V2 Int32, s)])])]
         mapLayoutToSurfaces cs =
-            traverse . runKleisli $
-                arr (outputId . mappedOutput . fst)
-                &&& Kleisli (mapWindowsToSurfaces cs . first (topLeft . mappedRect))
+            map (outputId . mappedOutput . fst &&& mapWindowsToSurfaces cs . first (topLeft . mappedRect))
 
         -- Maps a list of 'Rect's along with the 'ClientWindowId' to a list of
         -- 'Rect's with trees of the surface data and the surface's window
         -- offset.
         mapWindowsToSurfaces :: M.Map ClientId (ClientData s)
                              -> (V2 Word32, [(Rect Word32, ClientWindowId)])
-                             -> Maybe [(Rect Word32, [(V2 Int32, s)])]
+                             -> [(Rect Word32, [(V2 Int32, s)])]
         mapWindowsToSurfaces cs (off, ws) =
-            traverse (runKleisli . second . Kleisli $ mapWindowToSurfaces cs off) ws
+            map (second $ mapWindowToSurfaces cs off) ws
 
         -- Maps a window to a tree of the surface data with the surface offset
         -- within the window.
         mapWindowToSurfaces :: M.Map ClientId (ClientData s)
                             -> V2 Word32
                             -> ClientWindowId
-                            -> Maybe [(V2 Int32, s)]
-        mapWindowToSurfaces cs off (ClientWindowId cid wid) = do
+                            -> [(V2 Int32, s)]
+        mapWindowToSurfaces cs off (ClientWindowId cid wid) = fromMaybe [] $ do
             cd  <- M.lookup cid cs
             win <- M.lookup wid (windows cd)
-            map (second surfData) <$> SM.lookupAll (fmap fromIntegral off) (winSurface win) (surfaces cd)
+            return
+                . map (second surfData)
+                $ SM.lookupAll (fmap fromIntegral off) (winSurface win) (surfaces cd)
 
 -- | Finds the windows that have changed between two layouts.
 layoutDiff :: [(MappedOutput, [(Rect Word32, ClientWindowId)])] -- ^ The new layout.
@@ -252,7 +244,7 @@ handleBackendEvent evt =
         mapWindowToSurfaces cs (ClientWindowId cid wid) = do
             cd  <- M.lookup cid cs
             win <- M.lookup wid (windows cd)
-            (,) cid <$> SM.lookupAllIds (winSurface win) (surfaces cd)
+            return (cid, SM.lookupAllIds (winSurface win) (surfaces cd))
 
 -- | Sends a configure event for a single window.
 configureWindow :: MonadFree (CoreOutputF s) m
@@ -301,13 +293,11 @@ handleCoreRequest cid req =
              msurf <- lookupSurface sid
              modifySurfaces $ SM.delete sid
              maybe (return ()) (backendRequest . B.SurfaceDestroy . (: []) . void) msurf
-         SurfaceCommit commitOp sids -> do
+         SurfaceCommit sids -> do
              surfs <- mapM
                 (\(sid, ss) -> do
                     modifySurfaces (SM.adjust (\surf -> surf { surfState = ss }) sid)
-                    case commitOp of
-                      CommitLayout -> return Nothing
-                      CommitFull   -> fmap void <$> lookupSurface sid
+                    fmap void <$> lookupSurface sid
                 )
                 sids
              backendCommit $ catMaybes surfs

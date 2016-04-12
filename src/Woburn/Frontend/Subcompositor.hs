@@ -3,10 +3,9 @@ module Woburn.Frontend.Subcompositor
     )
 where
 
+import Control.Monad
 import Graphics.Wayland
-import qualified Woburn.Core as C
 import Woburn.Frontend.Display.Object
-import Woburn.Frontend.Surface
 import Woburn.Frontend.Subsurface
 import Woburn.Frontend.Types
 import Woburn.Protocol.Core
@@ -20,6 +19,4 @@ subcompositorSlots subComp =
     where
         destroy = destroyClientObject subComp
 
-        getSubsurface cons surface parent = do
-            _ <- cons (subsurfaceSlots surface)
-            sendRequest $ C.SurfaceAttach (surfaceToId surface) (Just $ surfaceToId parent)
+        getSubsurface cons surface = void . cons . subsurfaceSlots surface

@@ -24,22 +24,6 @@ import Woburn.Frontend.Types.Surface
 import Woburn.Protocol.Core
 import Woburn.Surface
 
-toSurfaceState :: SurfaceData -> SurfaceState
-toSurfaceState sd =
-    SurfaceState { surfBuffer       = sdBuffer sd
-                 , surfBufferOffset = sdBufferOffset sd
-                 , surfBufferScale  = sdBufferScale sd
-                 , surfDamage       = combinedDamage
-                 , surfOpaque       = sdOpaque sd
-                 , surfInput        = sdInput sd
-                 , surfTransform    = sdBufferTransform sd
-                 }
-    where
-        combinedDamage =
-            sdDamageBuffer sd
-            `R.union`
-            R.scale (sdBufferScale sd) (R.offset (- sdBufferOffset sd) (sdDamageSurface sd))
-
 surfaceSlots :: SignalConstructor Server WlSurface Frontend
 surfaceSlots surface = do
     sendRequest $ C.SurfaceCreate surfaceId
@@ -51,7 +35,7 @@ surfaceSlots surface = do
                        , wlSurfaceFrame              = frame
                        , wlSurfaceSetOpaqueRegion    = setOpaque
                        , wlSurfaceSetInputRegion     = setInput
-                       , wlSurfaceCommit             = commit
+                       , wlSurfaceCommit             = commit'
                        , wlSurfaceSetBufferTransform = setBufferTransform
                        , wlSurfaceSetBufferScale     = setBufferScale
                        , wlSurfaceDamageBuffer       = damageBuffer
@@ -59,7 +43,8 @@ surfaceSlots surface = do
     where
         surfaceId = surfaceToId surface
 
-        modifySurface f = modify . second $ \s -> s { fsSurfaces = adjustSurface f surface (fsSurfaces s) }
+        modifySurfaces f = modify . second $ \s -> s { fsSurfaces = f (fsSurfaces s) }
+        modifySurface f = modifySurfaces (adjustSurface f surface)
 
         destroy = do
             sendRequest $ C.SurfaceDestroy surfaceId
@@ -91,16 +76,11 @@ surfaceSlots surface = do
             reg <- gets $ (region >>=) . flip M.lookup . fsRegions . snd
             modifySurface $ \s -> s { sdInput = fromMaybe R.everything reg }
 
-        commit = do
-            sData <- gets $ lookupSurface surface . fsSurfaces . snd
-            cbs   <- case sData of
-                       Nothing   -> error "Surface without surface data, should not happen"
-                       Just surf -> do
-                           sendRequest . C.SurfaceCommit surfaceId $ toSurfaceState surf
-                           return $ sdFrameCallbacks surf
-
-            modify . second $ \s -> s { fsSurfaces = insertCallbacks surfaceId cbs (fsSurfaces s) }
-            modifySurface nextSurfaceData
+        commit' = do
+            surfs <- state $ \(o, s) ->
+                second (\sd -> (o, s { fsSurfaces = sd }))
+                . commit surface $ fsSurfaces s
+            sendRequest $ C.SurfaceCommit surfs
 
         setBufferTransform t' =
             case fromInt32 t' of

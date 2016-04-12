@@ -9,16 +9,15 @@ import Control.Arrow
 import Control.Monad.State
 import Graphics.Wayland
 import Linear
-import qualified Woburn.Core as C
 import Woburn.Frontend.Display.Object
 import Woburn.Frontend.Types
-import Woburn.Frontend.Types.Surface
 import Woburn.Protocol.Core
+import qualified Woburn.Core as C
+import qualified Woburn.Frontend.Types.Surface as S
 
-
-subsurfaceSlots :: SObject WlSurface -> SignalConstructor Server WlSubsurface Frontend
-subsurfaceSlots surface subSurface = do
-    modifySurface addSubsurface
+subsurfaceSlots :: SObject WlSurface -> SObject WlSurface -> SignalConstructor Server WlSubsurface Frontend
+subsurfaceSlots surface parent subSurface = do
+    modifySurfaces (S.addSubsurface surface subSurface parent)
     return
         WlSubsurfaceSlots { wlSubsurfaceDestroy     = destroy
                           , wlSubsurfaceSetPosition = setPosition
@@ -28,22 +27,20 @@ subsurfaceSlots surface subSurface = do
                           , wlSubsurfaceSetDesync   = setSync False
                           }
     where
-        surfaceId = surfaceToId surface
-
-        modifySurface f = modify . second $ \s -> s { fsSurfaces = adjustSurface f surface (fsSurfaces s) }
-
-        addSubsurface sd = sd { sdSubsurface = Just subSurface }
-        delSubsurface sd = sd { sdSubsurface = Nothing }
+        modifySurfaces f = modify . second $ \s -> s { fsSurfaces = f (fsSurfaces s) }
 
         destroy = do
-            modifySurface delSubsurface
-            sendRequest $ C.SurfaceAttach surfaceId Nothing
+            modifySurfaces (S.destroySubsurface surface parent)
             destroyClientObject subSurface
 
-        setPosition x y = sendRequest $ C.SurfaceSetPosition surfaceId (V2 x y)
-        placeAbove sibling = sendRequest $ C.SurfacePlaceAbove surfaceId (surfaceToId sibling)
-        placeBelow sibling = sendRequest $ C.SurfacePlaceBelow surfaceId (surfaceToId sibling)
-        setSync = sendRequest . C.SurfaceSetSync surfaceId
+        setPosition x y = modifySurfaces (S.setPosition surface (V2 x y) parent)
+        placeAbove sibling = modifySurfaces (S.placeAbove surface sibling parent)
+        placeBelow sibling = modifySurfaces (S.placeBelow surface sibling parent)
+        setSync sync = do
+            surfs <- state $ \(o, s) ->
+                second (\sd -> (o, s { fsSurfaces = sd }))
+                . S.setSync surface sync $ fsSurfaces s
+            sendRequest $ C.SurfaceCommit surfs
 
 inertSubsurfaceSlots :: SignalConstructor Server WlSubsurface Frontend
 inertSubsurfaceSlots subsurface =

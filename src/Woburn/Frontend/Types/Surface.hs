@@ -226,9 +226,11 @@ setSync surfaceObj sync sd = fromMaybe ([], sd) $ do
 -- If the surface itself is in sync-mode the state will be cached and applied
 -- when the parent is committed.
 commit :: SObject WlSurface -> SurfacesData -> ([(SurfaceId, SurfaceState (V2 Int32, SurfaceId))], SurfacesData)
-commit surf =
-    runState (commitTree 0 surf)
-    . adjustSurface (\s -> nextSurfaceData $ s { sdCached = Just (toSurfaceState s) } ) surf
+commit surf = runState $ do
+    cbs <- gets $ concat . maybeToList . fmap sdFrameCallbacks . lookupSurface surf
+    modify $ insertCallbacks (surfaceToId surf) cbs
+    modify $ adjustSurface nextSurfaceData surf
+    commitTree 0 surf
 
 -- | The initial surface state.
 initialSurfacesData :: SurfacesData
@@ -243,6 +245,7 @@ nextSurfaceData sd =
        , sdDamageBuffer   = R.empty
        , sdBuffer         = Nothing
        , sdFrameCallbacks = []
+       , sdCached         = Just (toSurfaceState sd)
        }
 
 initialSurfaceData :: SurfaceData

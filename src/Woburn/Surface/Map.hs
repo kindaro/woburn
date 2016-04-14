@@ -61,9 +61,10 @@ lookupAll globalOff sid sm =
       Nothing   -> []
       Just surf ->
           let (l, r) = surfChildren $ surfState surf
-          in (concat l ++ [(globalOff, void surf)] ++ concat r)
+          in (concat l ++ [(globalOff, modifyState (\s -> s { surfChildren = ([], []) }) surf)] ++ concat r)
 
--- | Looks up the 'SurfaceId' of a surface and all its children.
+-- | Looks up the 'SurfaceId' of a surface and all its children, sorted by
+-- Z-order.
 lookupAllIds :: SurfaceId -> SurfaceMap s -> [SurfaceId]
 lookupAllIds sid sm =
     case fmap ((`lookupAllIds` sm) . snd) <$> lookup sid sm of

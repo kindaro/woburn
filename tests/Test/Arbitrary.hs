@@ -39,11 +39,8 @@ instance (Num a) => Arbitrary (STree a) where
         ++ r
         ++ [STree l' n r' | (l', r') <- shrink (l, r)]
 
-instance Arbitrary a => Arbitrary (Surface a) where
-    arbitrary = do
-        surf <- create <$> arbitrary
-        sync <- arbitrary
-        return surf { surfSync = sync }
+instance Arbitrary a => Arbitrary (Surface a b) where
+    arbitrary = create <$> arbitrary
 
 instance (Ord a, Num a, Arbitrary a) => Arbitrary (Rect a) where
     arbitrary = do

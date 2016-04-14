@@ -7,12 +7,10 @@ import Test.Rect
 import Test.Region
 import Test.STree
 import Test.SurfaceMap
-import Test.SurfaceTree
 import Test.Zipper
 
 tests :: [IO Bool]
-tests = [ surfaceTreeTests
-        , surfaceMapTests
+tests = [ surfaceMapTests
         , sTreeTests
         , zipperTests
         , mChanTests

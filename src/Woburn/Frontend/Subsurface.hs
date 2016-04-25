@@ -30,7 +30,7 @@ subsurfaceSlots surface parent subSurface = do
         modifySurfaces f = modify . second $ \s -> s { fsSurfaces = f (fsSurfaces s) }
 
         destroy = do
-            modifySurfaces (S.destroySubsurface surface parent)
+            modifySurfaces (S.delSubsurface surface parent)
             destroyClientObject subSurface
 
         setPosition x y = modifySurfaces (S.setPosition surface (V2 x y) parent)

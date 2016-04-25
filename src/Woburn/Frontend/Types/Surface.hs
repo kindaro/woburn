@@ -14,7 +14,7 @@ module Woburn.Frontend.Types.Surface
     , commit
     -- * Functions used for sub surfaces.
     , addSubsurface
-    , destroySubsurface
+    , delSubsurface
     , setPosition
     , placeAbove
     , placeBelow
@@ -75,12 +75,28 @@ data SurfaceData =
                 , sdInheritedSync   :: Bool
                 , sdCached          :: Maybe (SurfaceState (V2 Int32, SurfaceId))
                 }
+    deriving (Eq, Show)
 
 -- | Data for all the surfaces.
 data SurfacesData =
     SurfacesData { surfaces  :: M.Map (SObject WlSurface) SurfaceData
                  , callbacks :: M.Map SurfaceId [SObject WlCallback]
                  }
+    deriving (Eq, Show)
+
+-- | Returns all the children of a surface.
+children :: SurfaceData -> [SObject WlSurface]
+children = map snd . uncurry (++) . sdChildren
+
+-- | Propagates the sync flag through the surface tree.
+propagateSync :: Bool -> SObject WlSurface -> State SurfacesData ()
+propagateSync newSync sobj = do
+    msurf <- gets $ lookupSurface sobj
+    case msurf of
+      Nothing   -> return ()
+      Just surf -> do
+          modify $ adjustSurface (\s -> s { sdInheritedSync = newSync }) sobj
+          mapM_ (propagateSync (newSync || sdSync surf)) (children surf)
 
 insertSurface :: SObject WlSurface -> SurfaceData -> SurfacesData -> SurfacesData
 insertSurface surf dat sd = sd { surfaces = M.insert surf dat (surfaces sd) }
@@ -107,17 +123,21 @@ deleteCallbacks sid sd = sd { callbacks = M.delete sid (callbacks sd) }
 addSubsurface :: SObject WlSurface -> SObject WlSubsurface -> SObject WlSurface -> SurfacesData -> SurfacesData
 addSubsurface surf subsurf parent sd = fromMaybe sd $ do
     ps <- lookupSurface parent sd
-    return .
-        adjustSurface (\s -> s { sdChildren = first ((0, surf) :) (sdChildren s) }) parent
-        $ adjustSurface (\s -> s { sdSubsurface    = Just subsurf
-                                 , sdSync          = True
-                                 , sdInheritedSync = sdSync ps
+    return
+        . execState (propagateSync (sdSync ps || sdInheritedSync ps) surf)
+        . adjustSurface (\s -> s { sdChildren = first ((0, surf) :) (sdChildren s) }) parent
+        $ adjustSurface (\s -> s { sdSubsurface = Just subsurf
+                                 , sdSync       = True
                                  }) surf sd
 
-destroySubsurface :: SObject WlSurface -> SObject WlSurface -> SurfacesData -> SurfacesData
-destroySubsurface surf parent =
+-- | Deletes a sub-surface.
+delSubsurface :: SObject WlSurface -> SObject WlSurface -> SurfacesData -> SurfacesData
+delSubsurface surf parent =
     adjustSurface (\s -> s { sdChildren = filterChildren (sdChildren s) }) parent
-    . adjustSurface (\s -> s { sdSubsurface = Nothing }) surf
+    . adjustSurface (\s -> s { sdSubsurface    = Nothing
+                             , sdSync          = False
+                             , sdInheritedSync = False
+                             }) surf
     where
         filterChildren = uncurry ((,) `on` filter ((/= surf) . snd))
 
@@ -136,10 +156,11 @@ setPosition surf pos =
 
 data ShuffleOp = Above | Below
 
-shuffle :: SObject WlSurface
-        -> SObject WlSurface
-        -> SObject WlSurface
-        -> ShuffleOp
+-- | Shuffles a surface.
+shuffle :: SObject WlSurface -- ^ The surface to shuffle.
+        -> SObject WlSurface -- ^ The surface to place it above or below.
+        -> SObject WlSurface -- ^ The parent surface.
+        -> ShuffleOp         -- ^ Whether to place it above or below.
         -> SurfaceData
         -> SurfaceData
 shuffle a b p op surf =
@@ -185,7 +206,6 @@ commitTree n surfObj = do
             . concat
             <$> mapM (commitTree (n + 1)) (children s)
     where
-        children = map snd . uncurry (++) . sdChildren
         inSync s = sdInheritedSync s || sdSync s
 
 -- | Updates the sync flag of a surfaces.
@@ -201,25 +221,12 @@ setSync surfaceObj sync sd = fromMaybe ([], sd) $ do
         oldSync = sdInheritedSync surf || sdSync surf
 
     return . (`runState` sd) $ do
-        when (not (sdInheritedSync surf) && newSync /= oldSync) $
-            mapM_ (propagateSync newSync) (children surf)
+        mapM_ (propagateSync newSync) (children surf)
+        modify $ adjustSurface (\s -> s { sdSync = sync }) surfaceObj
 
         if not newSync && oldSync
           then commitTree 0 surfaceObj
           else return []
-    where
-        children = map snd . uncurry (++) . sdChildren
-
-        propagateSync :: Bool -> SObject WlSurface -> State SurfacesData ()
-        propagateSync newSync sobj = do
-            msurf <- gets $ lookupSurface sobj
-            case msurf of
-              Nothing   -> return ()
-              Just surf -> do
-                  let oldSync = sdInheritedSync surf || sdSync surf
-                  modify $ adjustSurface (\s -> s { sdInheritedSync = newSync }) sobj
-                  when (newSync /= oldSync) $
-                      mapM_ (propagateSync (newSync || sdSync surf)) (children surf)
 
 -- | Commits a surface and any of its children that are not in sync-mode.
 --

@@ -20,40 +20,8 @@ import Linear
 import Prelude hiding (foldr)
 import Woburn.Surface
 import qualified Woburn.Surface.Map as SM
-import Test.Arbitrary ()
+import Test.Arbitrary
 import Test.QuickCheck hiding (label)
-
-data Tree a = Tree [Tree a] a [Tree a]
-    deriving (Show, Eq)
-
-label :: Tree a -> a
-label (Tree _ l _) = l
-
-instance (Num a, Arbitrary b) => Arbitrary (Tree (a, b)) where
-    arbitrary = sized ((`evalStateT` 0) . f)
-        where
-            nextElem =
-                (,)
-                <$> state (id &&& (+ 1))
-                <*> lift arbitrary
-
-            f n
-              | n <= 1    = Tree <$> pure [] <*> nextElem <*> pure []
-              | otherwise = do
-                l <- lift $ choose (0, n - 1)
-                r <- lift $ choose (0, n - 1 - l)
-                let n' = (n - 1) `div` (l + r)
-                Tree
-                    <$> replicateM l (f n')
-                    <*> nextElem
-                    <*> replicateM r (f n')
-
-    shrink (Tree [] _ []) = []
-    shrink (Tree l  n r ) =
-        [Tree [] n []]
-        ++ l
-        ++ r
-        ++ [Tree l' n r' | (l', r') <- shrink (l, r)]
 
 maxId :: Tree (SurfaceId, (V2 Int32, Surface Int ())) -> SurfaceId
 maxId (Tree l (sid, _) r) = maximum (map maxId l ++ [sid] ++ map maxId r)

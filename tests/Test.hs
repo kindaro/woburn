@@ -8,6 +8,7 @@ import Test.Region
 import Test.STree
 import Test.SurfaceMap
 import Test.Zipper
+import Test.Frontend.Surface
 
 tests :: [IO Bool]
 tests = [ surfaceMapTests
@@ -16,6 +17,7 @@ tests = [ surfaceMapTests
         , mChanTests
         , regionTests
         , rectTests
+        , frontendSurfaceTests
         ]
 
 main :: IO ()

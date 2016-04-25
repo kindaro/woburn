@@ -41,7 +41,6 @@ executable woburn
                        Woburn.Protocol.XdgShell
                        Woburn.Surface
                        Woburn.Surface.Map
-                       Woburn.Surface.Tree
                        Woburn.Universe
                        Woburn.Window
   other-extensions:    DeriveFunctor
@@ -86,8 +85,8 @@ test-suite test
                        Test.Region
                        Test.STree
                        Test.SurfaceMap
-                       Test.SurfaceTree
                        Test.Zipper
+                       Test.Frontend.Surface
   default-language:    Haskell2010
   main-is:             Test.hs
   hs-source-dirs:      tests src

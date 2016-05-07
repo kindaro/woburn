@@ -189,9 +189,12 @@ backendCommit ss = do
                             -> [(V2 Int32, s)]
         mapWindowToSurfaces cs off (ClientSurfaceId cid sid) = fromMaybe [] $ do
             cd   <- M.lookup cid cs
+            let winOffset =
+                    maybe 0 (topLeft . winGeometry) $
+                        SM.lookup sid (surfaces cd) >>= surfWindowState . surfState
             return
                 . map (second surfData)
-                $ SM.lookupAll (fmap fromIntegral off) sid (surfaces cd)
+                $ SM.lookupAll (fmap fromIntegral off - winOffset) sid (surfaces cd)
 
 -- | Finds the windows that have changed between two layouts.
 layoutDiff :: [(MappedOutput, [(Rect Word32, ClientSurfaceId)])] -- ^ The new layout.

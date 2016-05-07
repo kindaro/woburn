@@ -38,7 +38,6 @@ import Woburn.Frontend.Types.Global
 import Woburn.Frontend.Types.Output
 import Woburn.Frontend.Types.Region
 import Woburn.Frontend.Types.Surface
-import Woburn.Frontend.Types.Window
 
 import Woburn.Types
 
@@ -101,7 +100,6 @@ data FrontendState =
                   , fsBuffers     :: BuffersData
                   , fsRegions     :: RegionsData
                   , fsOutputs     :: OutputsData
-                  , fsWindows     :: WindowsData
                   , fsEventSerial :: Word32
                   }
 
@@ -128,6 +126,5 @@ initialFrontendState =
                   , fsBuffers     = initialBuffersData
                   , fsRegions     = initialRegionsData
                   , fsOutputs     = initialOutputsData
-                  , fsWindows     = initialWindowsData
                   , fsEventSerial = 0
                   }

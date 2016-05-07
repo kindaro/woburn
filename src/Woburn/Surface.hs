@@ -4,13 +4,17 @@ module Woburn.Surface
     ( SurfaceId
     , Surface (..)
     , SurfaceState (..)
+    , WindowState (..)
     , modifyState
     , create
+    , isMapped
     )
 where
 
 import Data.Int
+import Data.Maybe
 import Data.Monoid
+import Data.Rect
 import Data.Region
 import Data.Word
 import Linear
@@ -19,6 +23,15 @@ import Woburn.Protocol.Core
 
 newtype SurfaceId = SurfaceId Word32
     deriving (Eq, Ord, Show, Num, Real, Integral, Enum)
+
+data WindowState =
+    WindowState { winTitle    :: String     -- ^ The window title.
+                , winClass    :: String     -- ^ The window 'class'.
+                , winGeometry :: Rect Int32 -- ^ The visible bounds of the window.
+                , winPopup    :: Maybe (SurfaceId, V2 Int32) -- ^ If this is a popup window, this contains
+                                                             -- the parent ID and the offset to popup at.
+                }
+    deriving (Eq, Show)
 
 data SurfaceState a =
     SurfaceState { surfBuffer       :: Maybe Buffer
@@ -29,6 +42,7 @@ data SurfaceState a =
                  , surfInput        :: Region Int32
                  , surfTransform    :: WlOutputTransform
                  , surfChildren     :: ([a], [a])
+                 , surfWindowState  :: Maybe WindowState
                  }
     deriving (Eq, Show)
 
@@ -82,4 +96,9 @@ create s =
                          , surfInput        = everything
                          , surfTransform    = WlOutputTransformNormal
                          , surfChildren     = ([], [])
+                         , surfWindowState  = Nothing
                          }
+
+-- | Checks whether a 'SurfaceState' describes a mapped window.
+isMapped :: SurfaceState a -> Bool
+isMapped ss = isJust (surfWindowState ss) && isJust (surfBuffer ss)

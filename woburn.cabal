@@ -42,7 +42,6 @@ executable woburn
                        Woburn.Surface
                        Woburn.Surface.Map
                        Woburn.Universe
-                       Woburn.Window
   other-extensions:    DeriveFunctor
                        ExistentialQuantification
                        FlexibleContexts

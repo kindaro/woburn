@@ -2,15 +2,24 @@ module Woburn.Frontend.Types.Surface
     ( SurfaceData (..)
     , SurfacesData (..)
     , surfaceToId
+    -- * Insertion/deletion of surfaces.
     , insertSurface
     , deleteSurface
     , adjustSurface
     , lookupSurface
+    -- * Insertion/deletion of window data.
+    , insertWindow
+    , adjustWindow
+    , deleteWindow
+    , lookupWindow
+    -- * Callbacks.
     , insertCallbacks
     , lookupCallbacks
     , deleteCallbacks
+    -- * Initial data.
     , initialSurfaceData
     , initialSurfacesData
+    -- * Commit
     , commit
     -- * Functions used for sub surfaces.
     , addSubsurface
@@ -33,6 +42,7 @@ import qualified Data.Map as M
 import Graphics.Wayland
 import Linear
 import Woburn.Buffer
+import Woburn.Frontend.Types.Window
 import Woburn.Protocol.Core
 import Woburn.Surface
 
@@ -51,6 +61,7 @@ toSurfaceState sd =
                  , surfInput        = sdInput sd
                  , surfTransform    = sdBufferTransform sd
                  , surfChildren     = uncurry ((,) `on` map (second surfaceToId)) (sdChildren sd)
+                 , surfWindowState  = toWindowState <$> sdWindowData sd
                  }
     where
         combinedDamage =
@@ -74,6 +85,7 @@ data SurfaceData =
                 , sdSync            :: Bool
                 , sdInheritedSync   :: Bool
                 , sdCached          :: Maybe (SurfaceState (V2 Int32, SurfaceId))
+                , sdWindowData      :: Maybe WindowData
                 }
     deriving (Eq, Show)
 
@@ -118,6 +130,18 @@ lookupCallbacks sid = fromMaybe [] . M.lookup sid . callbacks
 
 deleteCallbacks :: SurfaceId -> SurfacesData -> SurfacesData
 deleteCallbacks sid sd = sd { callbacks = M.delete sid (callbacks sd) }
+
+insertWindow :: SObject WlSurface -> WindowData -> SurfacesData -> SurfacesData
+insertWindow sobj ws = adjustSurface (\sd -> sd { sdWindowData = Just ws }) sobj
+
+adjustWindow :: (WindowData -> WindowData) -> SObject WlSurface -> SurfacesData -> SurfacesData
+adjustWindow f = adjustSurface (\sd -> sd { sdWindowData = fmap f (sdWindowData sd) })
+
+deleteWindow :: SObject WlSurface -> SurfacesData -> SurfacesData
+deleteWindow = adjustSurface (\sd -> sd { sdWindowData = Nothing })
+
+lookupWindow :: SObject WlSurface -> SurfacesData -> Maybe WindowData
+lookupWindow obj sd = M.lookup obj (surfaces sd) >>= sdWindowData
 
 -- | Adds a new sub-surface.
 addSubsurface :: SObject WlSurface -> SObject WlSubsurface -> SObject WlSurface -> SurfacesData -> SurfacesData
@@ -271,4 +295,5 @@ initialSurfaceData =
                 , sdSync            = False
                 , sdInheritedSync   = False
                 , sdCached          = Nothing
+                , sdWindowData      = Nothing
                 }

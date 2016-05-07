@@ -8,6 +8,7 @@ import Control.Arrow
 import Control.Monad
 import Control.Monad.State
 import qualified Data.Set as S
+import Data.Rect
 import Data.Word
 import Graphics.Wayland
 import Linear
@@ -18,24 +19,31 @@ import Woburn.Frontend.Types.Surface
 import Woburn.Frontend.Types.Window
 import Woburn.Protocol.Core
 import Woburn.Protocol.XdgShell
-import qualified Woburn.Core as C
-import Woburn.Window
+import Woburn.Surface
 
-windowToId :: SObject XdgSurface -> WindowId
-windowToId = fromIntegral . unObjId . unObject
-
-modifyWindows :: (WindowsData -> WindowsData) -> Frontend ()
-modifyWindows f = modify . second $ \s -> s { fsWindows = f (fsWindows s) }
-
-sendConfigure :: SObject XdgSurface -> Frontend ()
+sendConfigure :: SObject WlSurface -> Frontend ()
 sendConfigure surf = do
-    (WindowData (V2 w h) states) <- gets $ lookup (windowToId surf) . fsWindows . snd
-    serial                       <- nextEventSerial
-    xdgSurfaceConfigure (signals surf) w h (map toWord32 $ S.toList states) serial
+    mwd    <- gets $ lookupWindow surf . fsSurfaces . snd
+    serial <- nextEventSerial
+    case mwd of
+      Nothing -> return ()
+      Just wd ->
+          let (V2 w h) = wdSize wd
+           in xdgSurfaceConfigure
+                (signals $ wdObject wd)
+                w h
+                (map toWord32 . S.toList $ wdStates wd)
+                serial
+
+modifySurfaces :: (SurfacesData -> SurfacesData) -> Frontend ()
+modifySurfaces f = modify . second $ \s -> s { fsSurfaces = f (fsSurfaces s) }
+
+modifyWindow :: (WindowData -> WindowData) -> SObject WlSurface -> Frontend ()
+modifyWindow f surface = modifySurfaces (adjustWindow f surface)
 
 xdgSurfaceSlots :: SObject WlSurface -> SignalConstructor Server XdgSurface Frontend
 xdgSurfaceSlots surface xdgSurface = do
-    sendRequest . C.WindowCreate windowId $ surfaceToId surface
+    modifySurfaces . insertWindow surface $ initialWindowData xdgSurface
     return
         XdgSurfaceSlots { xdgSurfaceDestroy           = destroy
                         , xdgSurfaceSetParent         = setParent
@@ -53,27 +61,28 @@ xdgSurfaceSlots surface xdgSurface = do
                         , xdgSurfaceSetMinimized      = setMinimized
                         }
     where
-        windowId = windowToId xdgSurface
+        destroy = do
+            modifySurfaces $ deleteWindow surface
+            destroyClientObject xdgSurface
 
-        destroy = destroyClientObject xdgSurface
-        setParent parent = return ()
+        setParent _ = return ()
 
-        setTitle = sendRequest . C.WindowSetTitle windowId
-        setAppId = sendRequest . C.WindowSetClass windowId
+        setTitle title = modifyWindow (\ws -> ws { wdTitle = title }) surface
+        setAppId appId = modifyWindow (\ws -> ws { wdClass = appId }) surface
 
         showMenu seat serial x y = error "showMenu is not implemented yet"
         move _ _ = return ()
         resize _ _ _ = return ()
         ackConfigure _ = return ()
-        setGeometry _ _ _ _ = return ()
+        setGeometry x y w h = modifyWindow (\ws -> ws { wdGeometry = Rect (V2 x y) (V2 (x + w - 1) (y + h - 1)) }) surface
 
         set st = do
-            modifyWindows (setState st windowId)
-            sendConfigure xdgSurface
+            modifyWindow (setState st) surface
+            sendConfigure surface
 
         unset st = do
-            modifyWindows (unsetState st windowId)
-            sendConfigure xdgSurface
+            modifyWindow (unsetState st) surface
+            sendConfigure surface
 
         setMaximized = set XdgSurfaceStateMaximized
         unsetMaximized = unset XdgSurfaceStateMaximized
@@ -82,9 +91,9 @@ xdgSurfaceSlots surface xdgSurface = do
 
         setMinimized = return ()
 
-updateSize :: WindowId -> V2 Word32 -> Frontend ()
-updateSize windowId size = do
-    modifyWindows (setSize size windowId)
+updateSize :: SurfaceId -> V2 Word32 -> Frontend ()
+updateSize sid sz = do
+    modifyWindow (setSize sz) surf
     sendConfigure surf
     where
-        surf = Object . ObjId $ fromIntegral windowId
+        surf = Object . ObjId $ fromIntegral sid

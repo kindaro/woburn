@@ -47,33 +47,25 @@ import Woburn.Output
 import Woburn.Protocol.Core
 import Woburn.Surface
 import qualified Woburn.Surface.Map as SM
-import Woburn.Window
 import qualified Woburn.Universe as U
 import Woburn.Types
 
-data ClientWindowId = ClientWindowId ClientId WindowId
+data ClientSurfaceId = ClientSurfaceId ClientId SurfaceId
     deriving (Eq, Ord, Show)
 
 data CoreState s =
     CoreState { outputs  :: [MappedOutput]
               , clients  :: M.Map ClientId (ClientData s)
-              , universe :: U.Universe ClientWindowId
-              , layedOut :: [(MappedOutput, [(Rect Word32, ClientWindowId)])]
+              , universe :: U.Universe ClientSurfaceId
+              , layedOut :: [(MappedOutput, [(Rect Word32, ClientSurfaceId)])]
               }
 
 data ClientData s =
-    ClientData { surfaces :: SM.SurfaceMap s
-               , windows  :: M.Map WindowId Window
-               }
+    ClientData { surfaces :: SM.SurfaceMap s }
 
 -- | A core request.
 data Request =
-    WindowCreate WindowId SurfaceId
-  | WindowDestroy WindowId
-  | WindowSetTitle WindowId String
-  | WindowSetClass WindowId String
-
-  | SurfaceCreate SurfaceId
+    SurfaceCreate SurfaceId
   | SurfaceDestroy SurfaceId
   | SurfaceCommit [(SurfaceId, SurfaceState (V2 Int32, SurfaceId))]
   deriving (Eq, Show)
@@ -84,7 +76,7 @@ data Event =
   | OutputRemoved MappedOutput
   | SurfaceFrame [SurfaceId]
   | BufferReleased Buffer
-  | WindowConfigure WindowId (V2 Word32)
+  | WindowConfigure SurfaceId (V2 Word32)
   | Error Error
   deriving (Eq, Show)
 
@@ -171,11 +163,11 @@ backendCommit ss = do
 
     backendRequest . B.SurfaceCommit ss $ mapLayoutToSurfaces cs l
     where
-        -- | Maps all the 'ClientWindowId' in the layout to the containing
+        -- | Maps all the 'ClientSurfaceId' in the layout to the containing
         -- rectangle along with the surface tree, and maps the 'MappedOutput'
         -- to their respective 'OutputId'.
         mapLayoutToSurfaces :: M.Map ClientId (ClientData s)
-                            -> [(MappedOutput, [(Rect Word32, ClientWindowId)])]
+                            -> [(MappedOutput, [(Rect Word32, ClientSurfaceId)])]
                             -> [(OutputId, [(Rect Word32, [(V2 Int32, s)])])]
         mapLayoutToSurfaces cs =
             map (outputId . mappedOutput . fst &&& mapWindowsToSurfaces cs . first (topLeft . mappedRect))
@@ -184,7 +176,7 @@ backendCommit ss = do
         -- 'Rect's with trees of the surface data and the surface's window
         -- offset.
         mapWindowsToSurfaces :: M.Map ClientId (ClientData s)
-                             -> (V2 Word32, [(Rect Word32, ClientWindowId)])
+                             -> (V2 Word32, [(Rect Word32, ClientSurfaceId)])
                              -> [(Rect Word32, [(V2 Int32, s)])]
         mapWindowsToSurfaces cs (off, ws) =
             map (second $ mapWindowToSurfaces cs off) ws
@@ -193,19 +185,18 @@ backendCommit ss = do
         -- within the window.
         mapWindowToSurfaces :: M.Map ClientId (ClientData s)
                             -> V2 Word32
-                            -> ClientWindowId
+                            -> ClientSurfaceId
                             -> [(V2 Int32, s)]
-        mapWindowToSurfaces cs off (ClientWindowId cid wid) = fromMaybe [] $ do
-            cd  <- M.lookup cid cs
-            win <- M.lookup wid (windows cd)
+        mapWindowToSurfaces cs off (ClientSurfaceId cid sid) = fromMaybe [] $ do
+            cd   <- M.lookup cid cs
             return
                 . map (second surfData)
-                $ SM.lookupAll (fmap fromIntegral off) (winSurface win) (surfaces cd)
+                $ SM.lookupAll (fmap fromIntegral off) sid (surfaces cd)
 
 -- | Finds the windows that have changed between two layouts.
-layoutDiff :: [(MappedOutput, [(Rect Word32, ClientWindowId)])] -- ^ The new layout.
-           -> [(MappedOutput, [(Rect Word32, ClientWindowId)])] -- ^ The old layout.
-           -> [(V2 Word32, ClientWindowId)]                     -- ^ The windows that has changed.
+layoutDiff :: [(MappedOutput, [(Rect Word32, ClientSurfaceId)])] -- ^ The new layout.
+           -> [(MappedOutput, [(Rect Word32, ClientSurfaceId)])] -- ^ The old layout.
+           -> [(V2 Word32, ClientSurfaceId)]                     -- ^ The windows that has changed.
 layoutDiff new' old' = filter (`S.notMember` S.fromList old) new
     where
         new = concatMap (map (first size) . snd) new'
@@ -241,28 +232,26 @@ handleBackendEvent evt =
                 (mapMaybe (mapWindowToSurfaces cs) wins)
     where
         -- | Maps a window to its list of surfaces.
-        mapWindowToSurfaces cs (ClientWindowId cid wid) = do
+        mapWindowToSurfaces cs (ClientSurfaceId cid sid) = do
             cd  <- M.lookup cid cs
-            win <- M.lookup wid (windows cd)
-            return (cid, SM.lookupAllIds (winSurface win) (surfaces cd))
+            return (cid, SM.lookupAllIds sid (surfaces cd))
 
 -- | Sends a configure event for a single window.
 configureWindow :: MonadFree (CoreOutputF s) m
                 => V2 Word32        -- ^ The window size.
-                -> ClientWindowId   -- ^ The window ID.
+                -> ClientSurfaceId  -- ^ The window ID.
                 -> m ()
-configureWindow sz (ClientWindowId cid wid) =
-    clientEvent (Just cid) (WindowConfigure wid sz)
+configureWindow sz (ClientSurfaceId cid sid) =
+    clientEvent (Just cid) (WindowConfigure sid sz)
 
 -- | Sets the universe, and recomputes the layout.
 setUniverse :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m)
-            => m (U.Universe ClientWindowId)
+            => m (U.Universe ClientSurfaceId)
             -> m ()
 setUniverse f = do
     uni <- f
     ws  <- state $ updateUniverse uni
     mapM_ (uncurry configureWindow) ws
-    backendCommit []
     where
         updateUniverse uni s =
             let newLayout = layout uni
@@ -271,40 +260,47 @@ setUniverse f = do
             (layoutDiff newLayout oldLayout, s { universe = uni, layedOut = newLayout })
 
 modifyUniverse :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m)
-               => (U.Universe ClientWindowId -> U.Universe ClientWindowId) -> m ()
+               => (U.Universe ClientSurfaceId -> U.Universe ClientSurfaceId) -> m ()
 modifyUniverse f = setUniverse (f <$> gets universe)
 
 handleCoreRequest :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m) => ClientId -> Request -> m ()
 handleCoreRequest cid req =
     case req of
-         WindowCreate       wid sid   -> do
-             modifyUniverse $ U.insert (ClientWindowId cid wid)
-             modifyWindows  $ M.insert wid (Window "" "" sid)
-         WindowDestroy      wid       -> do
-             modifyUniverse $ U.delete (ClientWindowId cid wid)
-             modifyWindows  $ M.delete wid
-         WindowSetTitle     wid title -> modifyWindow wid $ \w -> w { winTitle = title }
-         WindowSetClass     wid cls   -> modifyWindow wid $ \w -> w { winClass = cls }
-
          SurfaceCreate      sid      -> do
              surf <- create <$> backendSurfGet
              modifySurfaces $ SM.insert sid surf
          SurfaceDestroy     sid      -> do
              msurf <- lookupSurface sid
+             modifyUniverse . U.delete $ ClientSurfaceId cid sid
+             backendCommit []
              modifySurfaces $ SM.delete sid
              maybe (return ()) (backendRequest . B.SurfaceDestroy . (: []) . void) msurf
          SurfaceCommit sids -> do
-             surfs <- mapM
-                (\(sid, ss) -> do
-                    modifySurfaces (SM.adjust (\surf -> surf { surfState = ss }) sid)
-                    fmap void <$> lookupSurface sid
+             (ops, surfs) <- (unzip . catMaybes) <$> mapM
+                (\(sid, ss) ->
+                    state $ \s ->
+                        maybe (Nothing, s) (first Just) $ do
+                            cd   <- M.lookup cid (clients s)
+                            surf <- SM.lookup sid (surfaces cd)
+
+                            let surf' = surf { surfState = ss }
+                                cd'   = cd { surfaces = SM.insert sid surf' (surfaces cd) }
+                                s'    = s { clients = M.insert cid cd' (clients s) }
+
+                            return ((uniOp sid ss (surfState surf), void surf'), s')
                 )
                 sids
-             backendCommit $ catMaybes surfs
+             modifyUniverse $ foldr (.) id ops
+             backendCommit surfs
     where
+        -- Remove or add the surface as a window if it is (un)mapped.
+        uniOp sid ss oldSs =
+            case (isMapped oldSs, isMapped ss) of
+              (True , False) -> U.delete $ ClientSurfaceId cid sid
+              (False, True ) -> U.insert $ ClientSurfaceId cid sid
+              _              -> id
+
         modifyClient f = modify $ \s -> s { clients = M.adjust f cid (clients s) }
-        modifyWindows f = modifyClient $ \c -> c { windows = f (windows c) }
-        modifyWindow wid f = modifyWindows $ M.adjust f wid
         modifySurfaces f = modifyClient $ \c -> c { surfaces = f (surfaces c) }
         lookupSurface sid = gets $ \s -> do
             cd <- M.lookup cid (clients s)
@@ -328,11 +324,12 @@ handleInput input =
              -- When a client is deleted we have to remove the client data
              cd <- state $ \s -> (M.lookup cid (clients s), s { clients  = M.delete cid (clients s) })
              -- and all of its windows
-             modifyUniverse . U.filter $ \(ClientWindowId cid' _) -> cid' /= cid
+             modifyUniverse . U.filter $ \(ClientSurfaceId cid' _) -> cid' /= cid
+             backendCommit []
              -- and destoy its surfaces
              backendRequest . B.SurfaceDestroy $ maybe [] (map void . SM.elems . surfaces) cd
     where
-        newClientData = ClientData SM.empty M.empty
+        newClientData = ClientData SM.empty
 
 -- | Creates a new 'CoreState'.
 newCoreState :: CoreState s

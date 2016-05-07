@@ -1,59 +1,60 @@
 module Woburn.Frontend.Types.Window
     ( WindowData (..)
-    , WindowsData (..)
-    , initialWindowsData
+    , initialWindowData
     , setState
     , unsetState
     , setSize
-    , lookup
+    , toWindowState
     )
 where
 
-import qualified Data.Map as M
 import qualified Data.Set as S
-import Data.Maybe
+import Data.Int
+import Data.Rect
 import Data.Word
+import Graphics.Wayland
 import Linear
-import Prelude hiding (lookup)
+import Woburn.Surface hiding (modifyState)
 import Woburn.Protocol.XdgShell
-import Woburn.Window
 
 data WindowData =
-    WindowData { wdSize   :: V2 Word32
-               , wdStates :: S.Set XdgSurfaceState
+    WindowData { wdSize     :: V2 Word32
+               , wdStates   :: S.Set XdgSurfaceState
+               , wdObject   :: SObject XdgSurface
+               , wdTitle    :: String
+               , wdClass    :: String
+               , wdGeometry :: Rect Int32
                }
     deriving (Eq, Show)
 
-data WindowsData = WindowsData { windows :: M.Map WindowId WindowData }
-    deriving (Eq, Show)
+toWindowState :: WindowData -> WindowState
+toWindowState wd =
+    WindowState { winTitle    = wdTitle wd
+                , winClass    = wdClass wd
+                , winGeometry = wdGeometry wd
+                , winPopup    = Nothing
+                }
 
-initialWindowsData :: WindowsData
-initialWindowsData = WindowsData { windows = M.empty }
-
-initialWindowData :: WindowData
-initialWindowData = WindowData 0 S.empty
-
-modifyWindow :: (WindowData -> WindowData)
-             -> WindowId
-             -> WindowsData
-             -> WindowsData
-modifyWindow f wid wd =
-    wd { windows = M.alter (Just . f . fromMaybe initialWindowData) wid (windows wd) }
+initialWindowData :: SObject XdgSurface -> WindowData
+initialWindowData obj =
+    WindowData { wdSize     = 0
+               , wdStates   = S.empty
+               , wdObject   = obj
+               , wdTitle    = ""
+               , wdClass    = ""
+               , wdGeometry = Rect 0 maxBound
+               }
 
 modifyState :: (S.Set XdgSurfaceState -> S.Set XdgSurfaceState)
-            -> WindowId
-            -> WindowsData
-            -> WindowsData
-modifyState f = modifyWindow (\w -> w { wdStates = f (wdStates w) })
+            -> WindowData
+            -> WindowData
+modifyState f w = w { wdStates = f (wdStates w) }
 
-setState :: XdgSurfaceState -> WindowId -> WindowsData -> WindowsData
+setState :: XdgSurfaceState -> WindowData -> WindowData
 setState = modifyState . S.insert
 
-unsetState :: XdgSurfaceState -> WindowId -> WindowsData -> WindowsData
+unsetState :: XdgSurfaceState -> WindowData -> WindowData
 unsetState = modifyState . S.delete
 
-setSize :: V2 Word32 -> WindowId -> WindowsData -> WindowsData
-setSize size = modifyWindow (\w -> w { wdSize = size })
-
-lookup :: WindowId -> WindowsData -> WindowData
-lookup wid = fromMaybe initialWindowData . M.lookup wid . windows
+setSize :: V2 Word32 -> WindowData -> WindowData
+setSize sz w = w { wdSize = sz }

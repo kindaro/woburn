@@ -23,8 +23,7 @@ newtype OutputId = OutputId Word32
     deriving (Show, Eq, Ord, Num, Real, Integral, Enum)
 
 data Output =
-    Output { outputId          :: OutputId          -- ^ Unique ID number.
-           , outputMake        :: String            -- ^ The output make.
+    Output { outputMake        :: String            -- ^ The output make.
            , outputModel       :: String            -- ^ The output model.
            , outputCurMode     :: Mode              -- ^ The current mode.
            , outputModes       :: [Mode]            -- ^ Other available modes.

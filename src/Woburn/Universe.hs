@@ -29,6 +29,7 @@ data Universe a =
 
 data Screen a =
     Screen { workspace :: Workspace a
+           , outputId  :: OutputId
            , output    :: MappedOutput
            }
 
@@ -52,9 +53,9 @@ create ws =
 -- workspaces as there are screens.
 --
 -- Existing screens are removed.
-setOutputs :: [MappedOutput] -> Universe a -> Universe a
+setOutputs :: [(OutputId, MappedOutput)] -> Universe a -> Universe a
 setOutputs os u =
-    Universe { screens  = Z.fromList $ zipWith Screen ws os
+    Universe { screens  = Z.fromList $ zipWith (\w (i, o) -> Screen w i o) ws os
              , hidden   = drop (length os) ws
              , floating = floating u
              }
@@ -94,7 +95,7 @@ delete a u =
 -- | Finds all elements that are on a specific output.
 onOutput :: OutputId -> Universe a -> [a]
 onOutput oid u =
-    case find ((oid ==) . outputId . mappedOutput . output) (screens u) of
+    case find ((oid ==) . outputId) (screens u) of
       Nothing     -> []
       Just screen ->
           toList (windows $ workspace screen)

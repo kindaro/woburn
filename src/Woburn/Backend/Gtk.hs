@@ -46,8 +46,7 @@ outId = 0
 
 mkOut :: Float -> Float -> Output
 mkOut w h =
-    Output { outputId          = outId
-           , outputMake        = "Gtk window"
+    Output { outputMake        = "Gtk window"
            , outputModel       = "Gtk window"
            , outputCurMode     = Mode { modeWidth = round w, modeHeight = round h, modeRefresh = 60000, modePreferred = True }
            , outputModes       = []
@@ -90,9 +89,9 @@ commitSurface evtWr surf = do
     where
         ref = surfRef $ surfData surf
 
-drawSurface :: DrawWindow -> GC -> (V2 Int32, GtkSurface) -> IO ()
+drawSurface :: DrawWindow -> GC -> (V2 Int32, Surface GtkSurface ()) -> IO ()
 drawSurface dw gc (off, surf) = do
-    mBuf <- readIORef $ surfRef surf
+    mBuf <- readIORef . surfRef $ surfData surf
     case mBuf of
       Nothing  -> return ()
       Just buf -> do
@@ -100,13 +99,13 @@ drawSurface dw gc (off, surf) = do
           drawPixbuf dw gc (pixbuf buf) 0 0 x y (-1) (-1) RgbDitherNone 0 0
           touchBuffer (buffer buf)
 
-drawWindow :: DrawWindow -> GC -> Rect Word32 -> [(V2 Int32, GtkSurface)] -> IO ()
+drawWindow :: DrawWindow -> GC -> Rect Word32 -> [(V2 Int32, Surface GtkSurface ())] -> IO ()
 drawWindow dw gc scissorRect surfaces  = do
     let r@(Rect (V2 x1 y1) _) = fmap fromIntegral scissorRect
     gcSetClipRectangle gc (Rectangle x1 y1 (width r) (height r))
     mapM_ (drawSurface dw gc) (reverse surfaces)
 
-draw :: WMChan B.Event -> Window -> [(Rect Word32, [(V2 Int32, GtkSurface)])] -> IO ()
+draw :: WMChan B.Event -> Window -> [(Rect Word32, [(V2 Int32, Surface GtkSurface ())])] -> IO ()
 draw evtWr win windows = do
     dw <- widgetGetDrawWindow win
     gc <- gcNewWithValues dw defaultGCValues
@@ -148,7 +147,7 @@ gtkBackend = do
 
     _ <- postGUISync . on win configureEvent $ do
         (w, h) <- eventSize
-        liftIO . writeMChan evtWr . B.OutputAdded $ mkOut (fromIntegral w) (fromIntegral h)
+        liftIO . writeMChan evtWr . B.OutputAdded outId $ mkOut (fromIntegral w) (fromIntegral h)
         return True
 
     _ <- postGUISync . on win exposeEvent $ do

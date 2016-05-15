@@ -37,8 +37,8 @@ handleEvent :: C.Event -> Frontend ()
 handleEvent evt =
     case evt of
       C.BufferReleased  buf      -> releaseBuffer buf
-      C.OutputAdded     out      -> addOutput out
-      C.OutputRemoved   out      -> removeOutput out
+      C.OutputAdded     oid out  -> addOutput oid out
+      C.OutputRemoved   oid      -> removeOutput oid
       C.SurfaceFrame    surfs    -> surfaceFrame surfs
       C.WindowConfigure wid size -> updateSize wid size
       C.Error           err      -> undefined

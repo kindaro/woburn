@@ -44,9 +44,9 @@ configureOutput (MappedOutput out (Rect (V2 x y) _)) obj = do
                         [ WlOutputModeBitsPreferred | preferred ])
 
 -- | Returns a constructor that can be used to create new 'WlOutput' objects.
-outputCons :: MappedOutput -> SignalConstructor Server WlOutput Frontend
-outputCons mappedOut@(MappedOutput out _) obj = do
-    modify . second $ \s -> s { fsOutputs = M.adjust (second (obj :)) (outputId out) (fsOutputs s) }
+outputCons :: OutputId -> MappedOutput -> SignalConstructor Server WlOutput Frontend
+outputCons oid mappedOut obj = do
+    modify . second $ \s -> s { fsOutputs = M.adjust (second (obj :)) oid (fsOutputs s) }
     configureOutput mappedOut obj
     return WlOutputSlots
 
@@ -54,26 +54,26 @@ outputCons mappedOut@(MappedOutput out _) obj = do
 --
 -- If an output with the same id has already been added, it will simply send
 -- out new events telling the client about the new configuration.
-addOutput :: MappedOutput -> Frontend ()
-addOutput mappedOut@(MappedOutput out _) = do
-    info    <- gets $ M.lookup (outputId out) . fsOutputs . snd
+addOutput :: OutputId -> MappedOutput -> Frontend ()
+addOutput oid mappedOut = do
+    info    <- gets $ M.lookup oid . fsOutputs . snd
     newInfo <- case info of
                  Nothing -> do
-                     gid <- addGlobal (outputCons mappedOut)
+                     gid <- addGlobal (outputCons oid mappedOut)
                      return (gid, [])
 
                  Just (gid, objs) -> do
-                     replaceGlobal gid (outputCons mappedOut)
+                     replaceGlobal gid (outputCons oid mappedOut)
                      mapM_ (configureOutput mappedOut) objs
                      return (gid, objs)
 
-    modify . second $ \s -> s { fsOutputs = M.insert (outputId out) newInfo (fsOutputs s) }
+    modify . second $ \s -> s { fsOutputs = M.insert oid newInfo (fsOutputs s) }
 
 -- | Removes an output.
-removeOutput :: MappedOutput -> Frontend ()
-removeOutput (MappedOutput out _) = do
-    info <- gets $ M.lookup (outputId out) . fsOutputs . snd
-    modify . second $ \s -> s { fsOutputs = M.delete (outputId out) (fsOutputs s) }
+removeOutput :: OutputId -> Frontend ()
+removeOutput oid = do
+    info <- gets $ M.lookup oid . fsOutputs . snd
+    modify . second $ \s -> s { fsOutputs = M.delete oid (fsOutputs s) }
     case info of
       Nothing       -> error "Trying to remove an output that has not been added"
       Just (gid, _) -> delGlobal gid

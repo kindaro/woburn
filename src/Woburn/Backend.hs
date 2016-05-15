@@ -20,14 +20,14 @@ data Request s =
     -- The windows have a rectangular outline, and a list of surfaces. The
     -- surfaces are ordered with the top-most surface first.. The surfaces are
     -- paired with their offset from the upper left corner of the output.
-  | SurfaceCommit [Surface s ()] [(OutputId, [(Rect Word32, [(V2 Int32, s)])])]
+  | SurfaceCommit [Surface s ()] [(OutputId, [(Rect Word32, [(V2 Int32, Surface s ())])])]
     -- | Notifies the backend that a set of surfaces has been destroyed.
   | SurfaceDestroy [Surface s ()]
   deriving (Eq, Show)
 
 -- | Describes an event from the backend to the core.
 data Event =
-    OutputAdded Output
+    OutputAdded OutputId Output
   | OutputRemoved OutputId
   | OutputFrame OutputId
   | BufferReleased Buffer

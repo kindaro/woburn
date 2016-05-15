@@ -34,7 +34,6 @@ import Data.Rect
 import Data.Tuple
 import Data.Traversable (mapAccumR)
 import qualified Data.Map as M
-import qualified Data.Set as S
 import Data.Word
 import Linear
 
@@ -42,7 +41,7 @@ import Prelude
 
 import qualified Woburn.Backend as B
 import Woburn.Buffer
-import Woburn.Layout
+import qualified Woburn.Layout as L
 import Woburn.Output
 import Woburn.Protocol.Core
 import Woburn.Surface
@@ -54,10 +53,10 @@ data ClientSurfaceId = ClientSurfaceId ClientId SurfaceId
     deriving (Eq, Ord, Show)
 
 data CoreState s =
-    CoreState { outputs  :: [MappedOutput]
+    CoreState { outputs  :: [(OutputId, MappedOutput)]
               , clients  :: M.Map ClientId (ClientData s)
               , universe :: U.Universe ClientSurfaceId
-              , layedOut :: [(MappedOutput, [(Rect Word32, ClientSurfaceId)])]
+              , layout   :: L.Layout (ClientSurfaceId, [(V2 Int32, Surface s ())])
               }
 
 data ClientData s =
@@ -72,8 +71,8 @@ data Request =
 
 -- | A core event.
 data Event =
-    OutputAdded MappedOutput
-  | OutputRemoved MappedOutput
+    OutputAdded OutputId MappedOutput
+  | OutputRemoved OutputId
   | SurfaceFrame [SurfaceId]
   | BufferReleased Buffer
   | WindowConfigure SurfaceId (V2 Word32)
@@ -132,78 +131,18 @@ mapOutput off out = MappedOutput out . shiftX off $ outRect out
 -- | Gives a list of 'Output's positions in the global compositor space.
 --
 -- The first 'Output' in the list will be the right-most 'Output'.
-mapOutputs :: Word32 -> [Output] -> [MappedOutput]
-mapOutputs start = snd . mapAccumR f start
+mapOutputs :: [(OutputId, Output)] -> [(OutputId, MappedOutput)]
+mapOutputs = snd . mapAccumR f 0
     where
-        f off out =
+        f off (oid, out) =
             let out'@(MappedOutput _ r) = mapOutput off out
-            in (off + width r, out')
+            in (off + width r, (oid, out'))
 
--- | Returns the right-most edge of a list of outputs, assuming the first
--- element is the right-most one.
-outputsRight :: [MappedOutput] -> Word32
-outputsRight []    = 0
-outputsRight (o:_) = mappedRect o ^. to bottomRight . _x . to (+ 1)
-
--- | Deletes an output from a list of mapped outputs, and returns the deleted
--- item (or 'Nothing' if it was not in the list), along with a list of the
--- other outputs remapped to fill the hole of the removed output.
-deleteOutput :: OutputId -> [MappedOutput] -> (Maybe MappedOutput, [MappedOutput])
-deleteOutput oid os =
-    let (as, bs) = span ((/= oid) . outputId . mappedOutput) os
-    in
-    case bs of
-         []     -> (Nothing, as)
-         (x:xs) -> (Just x, mapOutputs (outputsRight xs) (map mappedOutput as) ++ xs)
-
+-- | Commits a list of surfaces to the backend.
 backendCommit :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m) => [Surface s ()] -> m ()
 backendCommit ss = do
-    l  <- gets layedOut
-    cs <- gets clients
-
-    backendRequest . B.SurfaceCommit ss $ mapLayoutToSurfaces cs l
-    where
-        -- | Maps all the 'ClientSurfaceId' in the layout to the containing
-        -- rectangle along with the surface tree, and maps the 'MappedOutput'
-        -- to their respective 'OutputId'.
-        mapLayoutToSurfaces :: M.Map ClientId (ClientData s)
-                            -> [(MappedOutput, [(Rect Word32, ClientSurfaceId)])]
-                            -> [(OutputId, [(Rect Word32, [(V2 Int32, s)])])]
-        mapLayoutToSurfaces cs =
-            map (outputId . mappedOutput . fst &&& mapWindowsToSurfaces cs . first (topLeft . mappedRect))
-
-        -- Maps a list of 'Rect's along with the 'ClientWindowId' to a list of
-        -- 'Rect's with trees of the surface data and the surface's window
-        -- offset.
-        mapWindowsToSurfaces :: M.Map ClientId (ClientData s)
-                             -> (V2 Word32, [(Rect Word32, ClientSurfaceId)])
-                             -> [(Rect Word32, [(V2 Int32, s)])]
-        mapWindowsToSurfaces cs (off, ws) =
-            map (second $ mapWindowToSurfaces cs off) ws
-
-        -- Maps a window to a tree of the surface data with the surface offset
-        -- within the window.
-        mapWindowToSurfaces :: M.Map ClientId (ClientData s)
-                            -> V2 Word32
-                            -> ClientSurfaceId
-                            -> [(V2 Int32, s)]
-        mapWindowToSurfaces cs off (ClientSurfaceId cid sid) = fromMaybe [] $ do
-            cd   <- M.lookup cid cs
-            let winOffset =
-                    maybe 0 (topLeft . winGeometry) $
-                        SM.lookup sid (surfaces cd) >>= surfWindowState . surfState
-            return
-                . map (second surfData)
-                $ SM.lookupAll (fmap fromIntegral off - winOffset) sid (surfaces cd)
-
--- | Finds the windows that have changed between two layouts.
-layoutDiff :: [(MappedOutput, [(Rect Word32, ClientSurfaceId)])] -- ^ The new layout.
-           -> [(MappedOutput, [(Rect Word32, ClientSurfaceId)])] -- ^ The old layout.
-           -> [(V2 Word32, ClientSurfaceId)]                     -- ^ The windows that has changed.
-layoutDiff new' old' = filter (`S.notMember` S.fromList old) new
-    where
-        new = concatMap (map (first size) . snd) new'
-        old = concatMap (map (first size) . snd) old'
+    l  <- gets layout
+    backendRequest . B.SurfaceCommit ss . L.toList $ fmap snd l
 
 -- | Handles backend events.
 handleBackendEvent :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m) => B.Event -> m ()
@@ -211,20 +150,22 @@ handleBackendEvent evt =
     case evt of
          B.BufferReleased buf -> clientEvent (Just $ bufClientId buf) (BufferReleased buf)
 
-         B.OutputAdded out -> do
+         B.OutputAdded outId out -> do
              mOut <- state $ \s ->
-                 let outs = snd . deleteOutput (outputId out) $ outputs s
-                     mOut = mapOutput (outputsRight outs) out
+                 let outs =
+                        mapOutputs
+                        . (++ [(outId, out)])
+                        . map (second mappedOutput)
+                        . filter ((/= outId) . fst)
+                        $ outputs s
                  in
-                 (mOut, s { outputs = mOut : outs })
-             clientEvent Nothing (OutputAdded mOut)
+                 (lookup outId outs, s { outputs = outs })
+             clientEvent Nothing (OutputAdded outId (fromJust mOut))
              setUniverse $ U.setOutputs <$> gets outputs <*> gets universe
 
          B.OutputRemoved oid -> do
-             mOut <- state $ \s -> second (\x -> s { outputs = x}) . deleteOutput oid $ outputs s
-             case mOut of
-                  Nothing  -> coreError "Backend removed a non-existing output"
-                  Just out -> clientEvent Nothing (OutputRemoved out)
+             modify $ \s -> s { outputs = filter ((/= oid) . fst) (outputs s) }
+             clientEvent Nothing (OutputRemoved oid)
              setUniverse $ U.setOutputs <$> gets outputs <*> gets universe
 
          B.OutputFrame oid -> do
@@ -252,15 +193,27 @@ setUniverse :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m)
             => m (U.Universe ClientSurfaceId)
             -> m ()
 setUniverse f = do
-    uni <- f
-    ws  <- state $ updateUniverse uni
-    mapM_ (uncurry configureWindow) ws
+    uni       <- f
+    oldLayout <- gets layout
+
+    let newLayoutWindows = L.fromUniverse uni
+    newLayoutSurfaces <- traverse (runKleisli $ returnA &&& Kleisli lookupAllClientSurface) newLayoutWindows
+
+    modify $ \s -> s { universe = uni, layout = newLayoutSurfaces }
+    mapM_ (uncurry configureWindow . first size) (L.difference (fmap fst oldLayout) newLayoutWindows)
+
+-- | Looks up a window and all its surfaces.
+lookupAllClientSurface :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m)
+                       => ClientSurfaceId
+                       -> m [(V2 Int32, Surface s ())]
+lookupAllClientSurface csid@(ClientSurfaceId cid sid) =
+    (maybe [] (lookupWindow . surfaces) . M.lookup cid) <$> gets clients
     where
-        updateUniverse uni s =
-            let newLayout = layout uni
-                oldLayout = layedOut s
-            in
-            (layoutDiff newLayout oldLayout, s { universe = uni, layedOut = newLayout })
+        lookupWindow surfs =
+            let winOffset =
+                    maybe 0 (topLeft . winGeometry) $
+                        SM.lookup sid surfs >>= surfWindowState . surfState
+             in SM.lookupAll (-winOffset) sid surfs
 
 modifyUniverse :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m)
                => (U.Universe ClientSurfaceId -> U.Universe ClientSurfaceId) -> m ()
@@ -312,7 +265,7 @@ handleCoreRequest cid req =
 announceOutputs :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m) => ClientId -> m ()
 announceOutputs cid = do
     os <- gets outputs
-    mapM_ (clientEvent (Just cid) . OutputAdded) os
+    mapM_ (clientEvent (Just cid) . uncurry OutputAdded) os
 
 -- | Handles the various core inputs.
 handleInput :: (MonadState (CoreState s) m, MonadFree (CoreOutputF s) m) => CoreInput s -> m ()
@@ -340,5 +293,5 @@ newCoreState =
     CoreState { outputs  = []
               , clients  = M.empty
               , universe = U.create ["workspace"]
-              , layedOut = []
+              , layout   = L.empty
               }

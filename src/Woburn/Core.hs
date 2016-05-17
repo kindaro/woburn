@@ -174,6 +174,8 @@ handleBackendEvent evt =
              mapM_
                 (\(cid, sids) -> clientEvent (Just cid) (SurfaceFrame sids))
                 (mapMaybe (mapWindowToSurfaces cs) wins)
+
+         B.Input ts is -> return ()
     where
         -- | Maps a window to its list of surfaces.
         mapWindowToSurfaces cs (ClientSurfaceId cid sid) = do

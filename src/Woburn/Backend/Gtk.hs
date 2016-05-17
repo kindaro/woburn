@@ -12,15 +12,17 @@ import Data.Int
 import Data.Rect
 import Data.Word
 import GHC.Conc (labelThread)
-import Graphics.UI.Gtk
+import Graphics.UI.Gtk as G
 import Graphics.UI.Gtk.Gdk.GC
 import Linear
 import System.Mem.Weak
 import Woburn.Buffer
+import Woburn.Input as I
 import Woburn.Output
 import Woburn.Protocol.Core
 import Woburn.Surface
 import qualified Woburn.Backend as B
+import Text.Printf
 
 data GtkBuffer =
     GtkBuffer { buffer :: Buffer
@@ -154,6 +156,12 @@ gtkBackend = do
         liftIO . withMVar layoutVar $ maybe (return ()) (draw evtWr win)
         return True
 
+    -- Setup mouse events, and track all mouse movement in the window
+    postGUISync $ widgetAddEvents win [ExposureMask, PointerMotionMask]
+    _ <- postGUISync . on win buttonPressEvent $ buttonEvent evtWr
+    _ <- postGUISync . on win buttonReleaseEvent $ buttonEvent evtWr
+    _ <- postGUISync . on win motionNotifyEvent $ motionEvent evtWr
+
     _ <- forkIO $ readUntilClosed reqRd (reqHandler evtWr win layoutVar)
 
     postGUISync $ widgetShowAll win
@@ -173,3 +181,24 @@ gtkBackend = do
                       widgetQueueDrawArea win 0 0 w h
                       return (lookup outId layedOut)
                   threadsLeave
+
+        buttonEvent evtWr = True <$ do
+            click  <- eventClick
+            ts     <- eventTime
+            evtBtn <- eventButton
+
+            let btn = case evtBtn of
+                        G.LeftButton    -> I.LeftButton
+                        G.RightButton   -> I.RightButton
+                        G.MiddleButton  -> I.MiddleButton
+                        G.OtherButton i -> I.OtherButton $ fromIntegral i
+
+            case click of
+              SingleClick  -> liftIO . writeMChan evtWr $ B.Input ts [Button btn Pressed ]
+              ReleaseClick -> liftIO . writeMChan evtWr $ B.Input ts [Button btn Released]
+              _            -> return ()
+
+        motionEvent evtWr = True <$ do
+            ts      <- eventTime
+            (x, y)  <- eventCoordinates
+            liftIO . writeMChan evtWr $ B.Input ts [MotionAbsolute outId (V2 (round x) (round y))]

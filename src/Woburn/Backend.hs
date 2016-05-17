@@ -6,6 +6,7 @@ import Data.Rect
 import Data.Word
 import Linear
 import Woburn.Buffer
+import Woburn.Input
 import Woburn.Output
 import Woburn.Surface
 
@@ -31,4 +32,5 @@ data Event =
   | OutputRemoved OutputId
   | OutputFrame OutputId
   | BufferReleased Buffer
+  | Input TimeStamp [RawInput]
   deriving (Eq, Show)

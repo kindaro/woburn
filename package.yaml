@@ -1,0 +1,56 @@
+name: woburn
+version: '0.1.0'
+synopsis: Wayland compositor
+category: Graphics
+author: Sivert Berg
+maintainer: code@trev.is
+license: GPL-3
+other-extensions:
+- DeriveFunctor
+- ExistentialQuantification
+- FlexibleContexts
+- FlexibleInstances
+- GeneralizedNewtypeDeriving
+- MultiParamTypeClasses
+- Rank2Types
+- TemplateHaskell
+- TupleSections
+- TypeFamilies
+ghc-options:
+- -Wall
+- -threaded
+- -rtsopts
+dependencies:
+- base >=4.7 && <4.9
+- wayland-wire
+- linear >=1.9 && <2.0
+- containers
+- mtl
+- diet-set
+- process
+- transformers
+- async
+- template-haskell
+- lens
+- stm
+- stm-chans
+- dlist
+- gtk >=0.13
+- free >=4.12
+- filepath
+- bindings-posix
+- time
+executables:
+  woburn:
+    main: Main.hs
+    source-dirs: src
+    ghc-prof-options: -fprof-auto
+tests:
+  test:
+    main: Test.hs
+    source-dirs:
+    - tests
+    - src
+    ghc-prof-options: -fprof-auto
+    dependencies:
+    - QuickCheck

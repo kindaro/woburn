@@ -6,10 +6,10 @@ packages:
     commit: '1c7771360405cf518cdf30d6e62b879cd714988e'
   extra-dep: true
 - location:
-    git: 'https://github.com/sivertb/diet-set'
-    commit: '968ed04294df76450bbaffa693a448edaf47b1a4'
+    git: 'https://github.com/kindaro/diet-set'
+    commit: '695565bc25a0d8a4df3042922ac60edbb8182554'
   extra-dep: true
 resolver: lts-6.31
 extra-deps:
-    - diet-set-0.1.0
+    - diet-set-0.2.0
     - wayland-wire-0.1.0

@@ -26,7 +26,7 @@ dependencies:
 - linear >=1.9 && <2.0
 - containers
 - mtl
-- diet-set
+- diet-set >= 0.2 && <1.0
 - process
 - transformers
 - async
